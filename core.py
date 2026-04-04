@@ -84,13 +84,15 @@ class Config:
 
     def __init__(self, path: str = "config.json"):
     self._data = dict(self.DEFAULTS)
+
     if os.path.exists(path):
         with open(path, "r", encoding="utf-8") as f:
             raw = json.load(f)
         for k, v in raw.items():
             if not k.startswith("//"):
                 self._data[k] = v
-    # Читаємо змінні середовища (пріоритет над config.json)
+
+    # ENV змінні
     env_map = {
         "BINANCE_API_KEY":    "api_key",
         "BINANCE_SECRET":     "api_secret",
@@ -99,15 +101,17 @@ class Config:
         "OPENAI_API_KEY":     "openai_api_key",
         "MODE":               "mode",
     }
+
     for env_key, cfg_key in env_map.items():
         val = os.environ.get(env_key)
         if val:
             self._data[cfg_key] = val
-        else:
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(self.DEFAULTS, f, indent=2, ensure_ascii=False)
-            log.info("✅ Створено config.json")
 
+    # якщо конфіг не існує — створюємо
+    if not os.path.exists(path):
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(self.DEFAULTS, f, indent=2, ensure_ascii=False)
+        log.info("✅ Створено config.json")
     def __getattr__(self, name):
         if name.startswith("_"):
             raise AttributeError(name)
