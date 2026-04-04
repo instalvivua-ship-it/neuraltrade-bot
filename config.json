@@ -46,7 +46,7 @@
 
   "// ─── ML ─────────────────────────────────────": "",
   "retrain_every_hours":   24,
-  "min_trades_for_train":  30,
+  "min_trades_for_train":  100,
 
   "// ─── LLM (опціонально) ──────────────────────": "",
   "use_llm":           false,
