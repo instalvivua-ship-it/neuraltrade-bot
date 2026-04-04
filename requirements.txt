@@ -1,11 +1,10 @@
-# NeuralTrade AI — залежності
 ccxt>=4.3.0
 fastapi>=0.111.0
 uvicorn[standard]>=0.29.0
 websockets>=12.0
 pandas>=2.2.0
 numpy>=1.26.0
-pandas-ta==0.3.14b
+ta>=0.11.0
 scikit-learn>=1.4.0
 xgboost>=2.0.0
 openai>=1.30.0
@@ -14,4 +13,3 @@ schedule>=1.2.0
 requests>=2.31.0
 python-dotenv>=1.0.0
 aiohttp>=3.9.0
-ta-lib-easy
