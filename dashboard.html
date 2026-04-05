@@ -581,9 +581,7 @@ function connectWS() {
 
     wsConn.onopen = () => {
       serverMode = true;
-      // Скидаємо графік при підключенні до сервера
-      hist = [];
-      mkrs = [];
+      startBinanceWS(curPair);
       setConnState('ok', 'СЕРВЕР OK');
       g('serverBar').style.display = 'none';
       addLog('ok', 'Python сервер підключено!');
@@ -626,14 +624,7 @@ function handleServerMsg(msg) {
     case 'prices':
       for (const [pair, price] of Object.entries(msg.prices)) {
         if (PRICES[pair]) PRICES[pair].p = price;
-        if (pair === curPair) {
-          updatePriceDisplay(price);
-          // Оновлюємо графік
-          hist.push(price);
-          if (hist.length > 120) hist.shift();
-          mkrs = mkrs.map(m => ({...m, i: m.i - 1}));
-          draw();
-        }
+        if (pair === curPair) updatePriceDisplay(price);
       }
       break;
 
@@ -726,11 +717,69 @@ async function fetchTrades() {
 // ════════════════════════════════════════════════════════════
 //  DEMO MODE (без сервера)
 // ════════════════════════════════════════════════════════════
+
+// ════════════════════════════════════════════════════════════
+//  BINANCE WEBSOCKET — реальні ціни прямо в браузері
+// ════════════════════════════════════════════════════════════
+let binanceWS = null;
+let binanceConnected = false;
+
+function startBinanceWS(pair) {
+  // Закриваємо попередній
+  if (binanceWS) {
+    try { binanceWS.onclose = null; binanceWS.onerror = null; binanceWS.close(); }
+    catch(_) {}
+    binanceWS = null;
+  }
+  binanceConnected = false;
+  const sym = pair.replace('/', '').toLowerCase();
+  try {
+    binanceWS = new WebSocket(
+      `wss://stream.binance.com:9443/ws/${sym}@ticker`
+    );
+    binanceWS.onopen = () => {
+      binanceConnected = true;
+      addLog('ok', `📡 Binance WS: ${pair} — реальні ціни`);
+    };
+    binanceWS.onmessage = (e) => {
+      try {
+        const d = JSON.parse(e.data);
+        const price = parseFloat(d.c);
+        if (!price || price < 1) return;
+        // Оновлюємо ціну
+        if (!PRICES[pair]) PRICES[pair] = {p: price, b: price};
+        PRICES[pair].p = price;
+        if (pair === curPair) {
+          updatePriceDisplay(price);
+          hist.push(price);
+          if (hist.length > 120) hist.shift();
+          mkrs = mkrs.map(m => ({...m, i: m.i - 1}));
+          draw();
+        }
+      } catch(_) {}
+    };
+    binanceWS.onerror = () => {
+      binanceConnected = false;
+      addLog('warn', 'Binance WS помилка — ціни з сервера');
+    };
+    binanceWS.onclose = () => {
+      binanceConnected = false;
+      // Авто-реконнект через 5 секунд
+      setTimeout(() => {
+        if (curPair === pair) startBinanceWS(pair);
+      }, 5000);
+    };
+  } catch(e) {
+    addLog('warn', 'Binance WS недоступний');
+  }
+}
+
 function runDemoMode() {
   g('serverBar').style.display = 'none';
   setConnState('wait', 'DEMO РЕЖИМ');
-  addLog('ok', 'Demo режим без сервера');
-  addLog('warn', 'Для реальних даних запусти: python server.py');
+  addLog('ok', 'Demo режим — Binance ціни з браузера');
+  // Підключаємо Binance WS навіть без сервера
+  startBinanceWS(curPair);
 }
 
 // ════════════════════════════════════════════════════════════
@@ -795,7 +844,7 @@ function draw() {
 //  LOCAL SIM TICK (коли сервер не підключений)
 // ════════════════════════════════════════════════════════════
 function localTick() {
-  if (serverMode) return;
+  if (serverMode || binanceConnected) return;
   const p = PRICES[curPair];
   p.p += (Math.random()-.48)*p.p*.004;
   hist.push(p.p); if(hist.length>120)hist.shift();
@@ -1170,8 +1219,10 @@ function selPair(pair, el) {
   curPair = pair;
   document.querySelectorAll('.ptab').forEach(t=>t.classList.remove('on'));
   el.classList.add('on');
-  initHist(); mkrs=[];
+  hist = []; mkrs = [];
   draw();
+  // Перепідключаємо Binance WS для нової пари
+  startBinanceWS(pair);
   addLog('info', `Переключено: ${pair}`);
 }
 
@@ -1189,11 +1240,11 @@ function showTab(tab, btn) {
 //  INIT
 // ════════════════════════════════════════════════════════════
 setInterval(()=>{g('ht').textContent=new Date().toLocaleTimeString('uk');},1000);
-setInterval(() => {
-  if (!serverMode) localTick();
-}, 900);
+setInterval(localTick, 900);
 
 initHist(); rsz(); draw();
+// Одразу підключаємо Binance WS для реальних цін
+startBinanceWS(curPair);
 if(window.innerWidth<=900) showTab('chart',document.querySelector('.nb'));
 
 addLog('ok',  'NeuralTrade AI v4.0 — Multi-Agent System');
