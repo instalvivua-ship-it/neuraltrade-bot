@@ -598,9 +598,10 @@ if __name__ == "__main__":
     t_sched.start()
     log.info(f"▶️  Scheduler запущено | mode={cfg.mode} | pairs={cfg.pairs}")
 
+    port = int(os.environ.get("PORT", cfg.server_port or 8000))
     uvicorn.run(
         app,
-        host=cfg.server_host or "0.0.0.0",
-        port=cfg.server_port or 8000,
+        host="0.0.0.0",
+        port=port,
     log_level="warning",
 )
