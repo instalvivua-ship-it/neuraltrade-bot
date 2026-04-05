@@ -1068,7 +1068,7 @@ async function exportCSV() {
 }
 
 async function sendToServer(path, body) {
-  const url = g('serverUrl').value.replace('ws://','http://').replace('/ws','');
+  const url = g('serverUrl').value.replace('wss://','https://').replace('ws://','http://').replace('/ws','');
   try {
     const r = await fetch(url+path, {
       method: 'POST',
