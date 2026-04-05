@@ -334,11 +334,12 @@ async def _broadcaster():
 # ════════════════════════════════════════════════════════════════
 
 def run_trading_cycle():
+    log.info(f"▶️  run_trading_cycle() called | paused={tg.is_paused} | pairs={cfg.pairs}")
     if tg.is_paused:
-        _queue_msg({"type":"agent_log","level":"warn",
-                    "message":"⏸ Торгівля на паузі (Telegram /pause)"})
+        log.info("⏸ Торгівля на паузі")
         return
 
+    log.info(f"🔄 Цикл {datetime.now().strftime('%H:%M:%S')} починається...")
     _queue_msg({"type":"cycle_start",
                 "message": f"Цикл {datetime.now().strftime('%H:%M:%S')}"})
 
@@ -370,6 +371,7 @@ def run_trading_cycle():
 
 
 def _run_pair(pair: str):
+    log.info(f"🔍 _run_pair({pair}) started")
     _queue_msg({"type":"agent_log","level":"info",
                 "message":f"🔍 Аналіз {pair}..."})
 
