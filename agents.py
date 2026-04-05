@@ -28,11 +28,19 @@ except ImportError:
 
 try:
     import pandas as pd
-    import pandas_ta as ta
     import numpy as np
     HAS_TA = True
 except ImportError:
     HAS_TA = False
+    log.warning("pandas/numpy не встановлено")
+
+# Бібліотека технічного аналізу
+try:
+    import ta as ta_lib
+    HAS_TA_LIB = True
+except ImportError:
+    HAS_TA_LIB = False
+    log.warning("ta не встановлено: pip install ta")
 
 try:
     from sklearn.ensemble import RandomForestClassifier
@@ -80,10 +88,12 @@ class TechAnalystAgent:
                 "enableRateLimit": True,
                 "options": {"defaultType": "spot"},
             }
-            # Для цін використовуємо публічний REST — без testnet
-            # Testnet тільки для реальних ордерів
-            self._exchange = None  # вимикаємо ccxt для цін
-            log.info("✅ Ціни: публічний Binance REST API")
+            if self.cfg.testnet:
+                params["urls"] = {"api": {
+                    "public":  "https://testnet.binance.vision/api",
+                    "private": "https://testnet.binance.vision/api",
+                }}
+            self._exchange = ccxt.binance(params)
             log.info(f"✅ Binance {'Testnet' if self.cfg.testnet else 'LIVE'}")
         except Exception as e:
             log.error(f"Binance init: {e}")
@@ -110,10 +120,8 @@ class TechAnalystAgent:
         # Fallback — CoinGecko (якщо Binance заблокований)
         try:
             sym_map = {
-                "BTC/USDT": "bitcoin",
-                "ETH/USDT": "ethereum",
-                "SOL/USDT": "solana",
-                "BNB/USDT": "binancecoin",
+                "BTC/USDT": "bitcoin", "ETH/USDT": "ethereum",
+                "SOL/USDT": "solana",  "BNB/USDT": "binancecoin",
             }
             cg_id = sym_map.get(pair)
             if cg_id:
@@ -171,47 +179,67 @@ class TechAnalystAgent:
         return pd.DataFrame(data, columns=["ts","open","high","low","close","volume"])
 
     def analyze(self, pair: str) -> Optional[Dict[str, Any]]:
-        df = self.fetch_ohlcv(pair)
+        """Технічний аналіз через бібліотеку ta."""
+        df    = self.fetch_ohlcv(pair)
         price = self.get_current_price(pair)
+
         if df is None or price is None or len(df) < 60:
             return self._fallback(pair)
-
         if not HAS_TA:
             return self._fallback(pair)
 
         try:
-            c, h, l, v = df["close"], df["high"], df["low"], df["volume"]
+            c = df["close"].astype(float)
+            h = df["high"].astype(float)
+            l = df["low"].astype(float)
+            v = df["volume"].astype(float)
 
-            # ── Базові індикатори ──────────────────────────────────
-            rsi    = float(ta.rsi(c, 14).iloc[-1])
-            macd_df= ta.macd(c, 12, 26, 9)
-            macd   = float(macd_df.iloc[-1]["MACD_12_26_9"])
-            macd_h = float(macd_df.iloc[-1]["MACDh_12_26_9"])
-            ma20   = float(ta.sma(c, 20).iloc[-1])
-            ma50   = float(ta.sma(c, 50).iloc[-1])
-            ma200  = float(ta.sma(c, min(200, len(c)-1)).iloc[-1])
-            bb     = ta.bbands(c, 20, 2)
-            bb_u   = float(bb.iloc[-1]["BBU_20_2.0"])
-            bb_l   = float(bb.iloc[-1]["BBL_20_2.0"])
+            if not HAS_TA_LIB:
+                # Ручний розрахунок без бібліотеки
+                return self._calc_manual(pair, price, c, h, l, v)
+
+            # ── RSI ───────────────────────────────────────────────
+            rsi_s = ta_lib.momentum.RSIIndicator(c, window=14).rsi()
+            rsi   = float(rsi_s.iloc[-1]) if not rsi_s.empty else 50.0
+
+            # ── MACD ──────────────────────────────────────────────
+            macd_ind = ta_lib.trend.MACD(c, window_slow=26, window_fast=12, window_sign=9)
+            macd     = float(macd_ind.macd().iloc[-1]) if not macd_ind.macd().empty else 0.0
+            macd_h   = float(macd_ind.macd_diff().iloc[-1]) if not macd_ind.macd_diff().empty else 0.0
+
+            # ── Moving Averages ───────────────────────────────────
+            ma20  = float(ta_lib.trend.SMAIndicator(c, window=20).sma_indicator().iloc[-1])
+            ma50  = float(ta_lib.trend.SMAIndicator(c, window=50).sma_indicator().iloc[-1])
+            ma200 = float(ta_lib.trend.SMAIndicator(c, window=min(200,len(c)-1)).sma_indicator().iloc[-1])
+
+            # ── Bollinger Bands ───────────────────────────────────
+            bb_ind = ta_lib.volatility.BollingerBands(c, window=20, window_dev=2)
+            bb_u   = float(bb_ind.bollinger_hband().iloc[-1])
+            bb_l   = float(bb_ind.bollinger_lband().iloc[-1])
             bb_pct = (price - bb_l) / (bb_u - bb_l) if (bb_u - bb_l) > 0 else 0.5
-            atr_s  = ta.atr(h, l, c, 14)
-            atr    = float(atr_s.iloc[-1])
-            adx_df = ta.adx(h, l, c, 14)
-            adx    = float(adx_df.iloc[-1]["ADX_14"]) if not adx_df.empty else 20.0
-            vol_avg= float(v.rolling(20).mean().iloc[-1])
-            vol_r  = float(v.iloc[-1]) / vol_avg if vol_avg > 0 else 1.0
 
-            # ── Volatility Filter ──────────────────────────────────
-            # Розмір останньої свічки vs ATR
+            # ── ATR ───────────────────────────────────────────────
+            atr_s = ta_lib.volatility.AverageTrueRange(h, l, c, window=14).average_true_range()
+            atr   = float(atr_s.iloc[-1]) if not atr_s.empty else price * 0.012
+
+            # ── ADX ───────────────────────────────────────────────
+            try:
+                adx = float(ta_lib.trend.ADXIndicator(h, l, c, window=14).adx().iloc[-1])
+            except Exception:
+                adx = 20.0
+
+            # ── Volume ────────────────────────────────────────────
+            vol_avg = float(v.rolling(20).mean().iloc[-1])
+            vol_r   = float(v.iloc[-1]) / vol_avg if vol_avg > 0 else 1.0
+
+            # ── Volatility Filter ─────────────────────────────────
             last_candle_range = abs(float(h.iloc[-1]) - float(l.iloc[-1]))
-            candle_vs_atr = last_candle_range / atr if atr > 0 else 1.0
-            volatility_spike = candle_vs_atr > (self.cfg.volatility_pause_multiplier or 2.5)
+            candle_vs_atr     = last_candle_range / atr if atr > 0 else 1.0
+            volatility_spike  = candle_vs_atr > (self.cfg.volatility_pause_multiplier or 2.5)
 
-            if volatility_spike:
-                log.info(f"⚠️  [{pair}] Volatility spike {candle_vs_atr:.1f}x ATR → PAUSE")
-
-            # ── Market Regime ──────────────────────────────────────
-            ma20_slope = (float(ta.sma(c,20).iloc[-1]) - float(ta.sma(c,20).iloc[-3])) / 3
+            # ── Market Regime ─────────────────────────────────────
+            sma20_vals = ta_lib.trend.SMAIndicator(c, window=20).sma_indicator()
+            ma20_slope = float(sma20_vals.iloc[-1] - sma20_vals.iloc[-4]) / 3 if len(sma20_vals) >= 4 else 0
             atr_avg20  = float(atr_s.rolling(20).mean().iloc[-1]) if len(atr_s) >= 20 else atr
             atr_ratio  = atr / atr_avg20 if atr_avg20 > 0 else 1.0
 
@@ -224,32 +252,27 @@ class TechAnalystAgent:
             else:
                 regime = "sideways"
 
-            # ── ATR-based SL/TP (ЗАМІСТЬ фіксованих %) ─────────────
-            atr_sl_mult = self.cfg.atr_sl_multiplier or 1.5
-            atr_tp_mult = self.cfg.atr_tp_multiplier or 3.0
-            sl_distance = atr * atr_sl_mult
-            tp_distance = atr * atr_tp_mult
+            # ── SL/TP відстані (ATR-based) ────────────────────────
+            sl_distance = atr * (self.cfg.atr_sl_multiplier or 1.5)
+            tp_distance = atr * (self.cfg.atr_tp_multiplier or 3.0)
 
-            # ── Додаткові features для ML ──────────────────────────
-            returns = c.pct_change()
-            ret1 = float(returns.iloc[-1])
-            ret3 = float(returns.iloc[-3:].sum())
-            ret5 = float(returns.iloc[-5:].sum())
-            ma_dist = (price - ma20) / ma20   # відстань до MA20
-            ma50_dist = (price - ma50) / ma50  # відстань до MA50
-            vol_std = float(returns.rolling(20).std().iloc[-1]) * 100  # realized vol
-            hour_of_day = datetime.now().hour  # час доби
+            # ── ML features ───────────────────────────────────────
+            returns   = c.pct_change()
+            ret1      = float(returns.iloc[-1])
+            ret3      = float(returns.iloc[-3:].sum())
+            ret5      = float(returns.iloc[-5:].sum())
+            ma_dist   = (price - ma20)  / ma20  if ma20  > 0 else 0
+            ma50_dist = (price - ma50)  / ma50  if ma50  > 0 else 0
+            vol_std   = float(returns.rolling(20).std().iloc[-1]) * 100
+            hour_of_day = datetime.now().hour
 
-            # ── Сигнал (враховуємо режим!) ─────────────────────────
+            # ── Торговий сигнал ───────────────────────────────────
             score, reasons = 0.0, []
 
-            # В sideways — не торгуємо трендові сигнали
             if regime == "sideways":
-                # Mean reversion стратегія
-                if rsi < 30: score += 0.25; reasons.append("RSI OS + sideways MR")
-                elif rsi > 70: score -= 0.25; reasons.append("RSI OB + sideways MR")
+                if rsi < 30:  score += 0.25; reasons.append(f"RSI {rsi:.1f} OS+sideways")
+                elif rsi > 70: score -= 0.25; reasons.append(f"RSI {rsi:.1f} OB+sideways")
             else:
-                # Трендова стратегія
                 if rsi < 35:    score += 0.18; reasons.append(f"RSI {rsi:.1f} OS")
                 elif rsi > 65:  score -= 0.18; reasons.append(f"RSI {rsi:.1f} OB")
                 if macd_h > 0:  score += 0.15; reasons.append("MACD+")
@@ -258,17 +281,13 @@ class TechAnalystAgent:
                 else:            score -= 0.10
                 if price > ma50: score += 0.08; reasons.append("P>MA50")
                 else:            score -= 0.08
-                if price > ma200: score += 0.05; reasons.append("P>MA200 (bull)")
+                if price > ma200: score += 0.05; reasons.append("P>MA200")
                 else:             score -= 0.05
 
-            if bb_pct < 0.2: score += 0.10; reasons.append("BB low")
+            if bb_pct < 0.2:  score += 0.10; reasons.append("BB low")
             elif bb_pct > 0.8: score -= 0.10; reasons.append("BB high")
-            if vol_r > 1.8: score += 0.04; reasons.append(f"Vol×{vol_r:.1f}")
-
-            # Блокуємо сигнал при volatile regime
-            if regime == "volatile":
-                score *= 0.4
-                reasons.insert(0, "⚠️ Volatile regime")
+            if vol_r > 1.8:   score += 0.04; reasons.append(f"Vol×{vol_r:.1f}")
+            if regime == "volatile": score *= 0.4; reasons.insert(0, "⚠️ Volatile")
 
             confidence = max(0.1, min(0.95, (score + 0.7) / 1.4))
             if score > 0.15:    signal = "BUY"
@@ -296,6 +315,83 @@ class TechAnalystAgent:
         except Exception as e:
             log.error(f"Tech [{pair}]: {e}", exc_info=True)
             return self._fallback(pair)
+
+    def _calc_manual(self, pair, price, c, h, l, v) -> Dict[str, Any]:
+        """Ручний розрахунок індикаторів без зовнішніх бібліотек."""
+        import numpy as np
+        # RSI
+        delta = c.diff()
+        gain  = delta.clip(lower=0).rolling(14).mean()
+        loss  = (-delta.clip(upper=0)).rolling(14).mean()
+        rs    = gain / loss.replace(0, 1e-10)
+        rsi   = float(100 - 100/(1+rs.iloc[-1]))
+
+        # MACD
+        ema12 = c.ewm(span=12).mean()
+        ema26 = c.ewm(span=26).mean()
+        macd_line = ema12 - ema26
+        signal_line = macd_line.ewm(span=9).mean()
+        macd   = float(macd_line.iloc[-1])
+        macd_h = float((macd_line - signal_line).iloc[-1])
+
+        # MAs
+        ma20  = float(c.rolling(20).mean().iloc[-1])
+        ma50  = float(c.rolling(50).mean().iloc[-1])
+        ma200 = float(c.rolling(min(200,len(c))).mean().iloc[-1])
+
+        # BB
+        std20 = c.rolling(20).std()
+        bb_u  = float((c.rolling(20).mean() + 2*std20).iloc[-1])
+        bb_l  = float((c.rolling(20).mean() - 2*std20).iloc[-1])
+        bb_pct= (price-bb_l)/(bb_u-bb_l) if (bb_u-bb_l)>0 else 0.5
+
+        # ATR
+        hl  = h - l
+        hpc = abs(h - c.shift(1))
+        lpc = abs(l - c.shift(1))
+        tr  = pd.concat([hl,hpc,lpc],axis=1).max(axis=1)
+        atr = float(tr.rolling(14).mean().iloc[-1])
+        adx = 20.0
+
+        vol_avg = float(v.rolling(20).mean().iloc[-1])
+        vol_r   = float(v.iloc[-1])/vol_avg if vol_avg>0 else 1.0
+
+        last_candle_range = abs(float(h.iloc[-1]) - float(l.iloc[-1]))
+        candle_vs_atr     = last_candle_range/atr if atr>0 else 1.0
+        volatility_spike  = candle_vs_atr > (self.cfg.volatility_pause_multiplier or 2.5)
+
+        returns = c.pct_change()
+        score, reasons = 0.0, []
+        if rsi < 35:   score += 0.18; reasons.append(f"RSI {rsi:.1f} OS")
+        elif rsi > 65: score -= 0.18; reasons.append(f"RSI {rsi:.1f} OB")
+        if macd_h > 0: score += 0.15; reasons.append("MACD+")
+        else:          score -= 0.15; reasons.append("MACD-")
+        if price > ma20: score += 0.10; reasons.append("P>MA20")
+        else:            score -= 0.10
+        if bb_pct < 0.2: score += 0.10; reasons.append("BB low")
+        elif bb_pct > 0.8: score -= 0.10; reasons.append("BB high")
+
+        confidence = max(0.1, min(0.95, (score+0.7)/1.4))
+        signal = "BUY" if score>0.15 else "SELL" if score<-0.15 else "HOLD"
+        ma20_slope = float(c.rolling(20).mean().iloc[-1] - c.rolling(20).mean().iloc[-4])/3
+        regime = "trend_up" if ma20_slope>0 else "trend_down" if ma20_slope<0 else "sideways"
+
+        return {
+            "pair":pair,"price":price,"signal":signal,
+            "score":score,"confidence":confidence,
+            "rsi":rsi,"macd":macd,"macd_h":macd_h,
+            "ma20":ma20,"ma50":ma50,"ma200":ma200,
+            "bb_pct":bb_pct,"bb_upper":bb_u,"bb_lower":bb_l,
+            "atr":atr,"adx":adx,
+            "volume_ratio":vol_r,"vol_std":float(returns.rolling(20).std().iloc[-1])*100,
+            "regime":regime,"candle_vs_atr":candle_vs_atr,
+            "volatility_spike":volatility_spike,
+            "sl_distance":atr*1.5,"tp_distance":atr*3.0,
+            "ma_dist":(price-ma20)/ma20,"ma50_dist":(price-ma50)/ma50,
+            "ret1":float(returns.iloc[-1]),"ret3":float(returns.iloc[-3:].sum()),
+            "ret5":float(returns.iloc[-5:].sum()),
+            "hour_of_day":datetime.now().hour,"reasons":reasons,
+        }
 
     def _fallback(self, pair: str) -> Dict[str, Any]:
         import random
