@@ -107,6 +107,27 @@ class TechAnalystAgent:
                 return p
         except Exception:
             pass
+        # Fallback — CoinGecko (якщо Binance заблокований)
+        try:
+            sym_map = {
+                "BTC/USDT": "bitcoin",
+                "ETH/USDT": "ethereum",
+                "SOL/USDT": "solana",
+                "BNB/USDT": "binancecoin",
+            }
+            cg_id = sym_map.get(pair)
+            if cg_id:
+                r = requests.get(
+                    f"https://api.coingecko.com/api/v3/simple/price"
+                    f"?ids={cg_id}&vs_currencies=usd",
+                    timeout=8
+                )
+                if r.status_code == 200:
+                    p = float(r.json()[cg_id]["usd"])
+                    self._price_cache[pair] = (p, time.time())
+                    return p
+        except Exception:
+            pass
         # Fallback ccxt
         if self._exchange:
             try:
