@@ -581,6 +581,9 @@ function connectWS() {
 
     wsConn.onopen = () => {
       serverMode = true;
+      // Скидаємо графік при підключенні до сервера
+      hist = [];
+      mkrs = [];
       setConnState('ok', 'СЕРВЕР OK');
       g('serverBar').style.display = 'none';
       addLog('ok', 'Python сервер підключено!');
