@@ -698,7 +698,7 @@ function handleServerMsg(msg) {
 
 async function fetchTrades() {
   try {
-    const apiUrl = g('serverUrl').value.replace('ws://', 'http://').replace('/ws', '');
+    const url = g('serverUrl').value.replace('wss://','https://').replace('ws://','http://').replace('/ws','');;
     const r = await fetch(`${apiUrl}/api/trades?limit=20`);
     const data = await r.json();
     renderTrades(data);
@@ -1050,7 +1050,7 @@ async function triggerRetrain() {
 
 async function exportCSV() {
   if (serverMode) {
-    const url = g('serverUrl').value.replace('ws://','http://').replace('/ws','');
+    const url = g('serverUrl').value.replace('wss://','https://').replace('ws://','http://').replace('/ws','');
     window.open(`${url}/api/export`, '_blank');
   } else {
     // Локальний експорт
