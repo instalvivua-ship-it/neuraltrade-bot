@@ -95,15 +95,52 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 .cr{border-right:none;border-left:1px solid var(--brd)}
 .cc{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
 @media(max-width:900px){.cl,.cr{display:none}}
-#mnav{display:none;position:fixed;bottom:0;left:0;right:0;height:54px;background:rgba(6,13,16,.97);border-top:1px solid var(--brd);z-index:100;flex-direction:row;align-items:center;justify-content:space-around}
-@media(max-width:900px){#mnav{display:flex}#app{padding-bottom:54px}}
-.nb{display:flex;flex-direction:column;align-items:center;gap:2px;color:var(--mut);font-family:'Share Tech Mono',monospace;font-size:9px;cursor:pointer;padding:5px 12px;border-radius:8px;transition:all .2s}
-.nb.on{color:var(--acc);background:rgba(0,255,231,.06)}
-.ni{font-size:17px}
-.mp{display:none;flex:1;overflow-y:auto;flex-direction:column}
+
+/* ── Bottom Nav ─────────────────────────────────── */
+#mnav{display:none;position:fixed;bottom:0;left:0;right:0;height:58px;
+  background:rgba(4,10,14,.98);border-top:1px solid var(--brd);
+  z-index:100;flex-direction:row;align-items:center;justify-content:space-around;
+  padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(max-width:900px){#mnav{display:flex}#app{padding-bottom:58px}}
+.nb{display:flex;flex-direction:column;align-items:center;gap:2px;
+  color:var(--mut);font-family:'Share Tech Mono',monospace;font-size:8px;
+  cursor:pointer;padding:6px 8px;border-radius:10px;transition:all .2s;
+  min-width:52px;position:relative;-webkit-tap-highlight-color:transparent}
+.nb.on{color:var(--acc);background:rgba(0,255,231,.07)}
+.nb.on::after{content:'';position:absolute;bottom:-1px;left:20%;right:20%;
+  height:2px;background:var(--acc);border-radius:2px;box-shadow:0 0 6px var(--acc)}
+.ni{font-size:18px;line-height:1}
+.nb-badge{position:absolute;top:4px;right:6px;background:var(--red);
+  color:#fff;font-size:7px;border-radius:8px;padding:1px 4px;min-width:14px;text-align:center}
+
+/* ── Mobile Panels ──────────────────────────────── */
+.mp{display:none;flex:1;overflow-y:auto;flex-direction:column;overscroll-behavior:contain}
 .mp::-webkit-scrollbar{width:2px}
 .mp::-webkit-scrollbar-thumb{background:var(--brd)}
 @media(max-width:900px){.mp.vis{display:flex}.cc{display:none}.cc.vis{display:flex}}
+
+/* ── Mobile swipe wrapper ───────────────────────── */
+@media(max-width:900px){
+  .main-area{overflow:hidden;position:relative}
+  canvas#ch{height:240px!important;touch-action:none}
+  #serverBar{flex-wrap:nowrap;overflow-x:auto}
+  #serverUrl{width:160px!important;min-width:100px}
+  #apiKeyInput{width:110px!important}
+  .htime{display:none}
+  header{height:44px;padding:0 10px}
+  .logo-text{font-size:11px}
+  .hbtn{padding:3px 7px;font-size:9px}
+  .conn-pill{font-size:9px;padding:3px 8px}
+}
+
+/* ── Mobile Stats compact ───────────────────────── */
+@media(max-width:480px){
+  .sg{grid-template-columns:1fr 1fr}
+  .si{padding:8px 10px}
+  .sl{font-size:8px}
+  .sv{font-size:14px}
+  .bv{font-size:22px}
+}
 
 /* PANELS */
 .p{background:var(--panel);padding:12px 14px;border-bottom:1px solid var(--brd)}
@@ -151,7 +188,7 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 .pchg{font-family:'Share Tech Mono',monospace;font-size:12px;padding:3px 8px;border-radius:5px;margin-bottom:2px}
 .pchg.up{background:rgba(0,255,136,.1);color:var(--grn);border:1px solid rgba(0,255,136,.2)}
 .pchg.dn{background:rgba(255,62,108,.1);color:var(--red);border:1px solid rgba(255,62,108,.2)}
-canvas#ch{width:100%;height:220px;display:block;cursor:crosshair}
+canvas#ch{width:100%;height:220px;display:block;cursor:crosshair;box-sizing:border-box}
 @media(min-width:600px){canvas#ch{height:280px}}
 @media(min-width:900px){canvas#ch{height:300px}}
 .chart-info{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--mut);height:18px;padding:0 14px 4px;display:flex;gap:12px;flex-wrap:wrap;background:var(--panel)}
@@ -551,12 +588,63 @@ tr.nr{animation:ra .5s ease}
     </div>
   </div>
 
+  <!-- ═══ MOBILE TRADES PANEL ═══════════════════════════════ -->
+  <div class="mp" id="mpTrades">
+    <!-- Compact stats bar -->
+    <div style="background:var(--panel);border-bottom:1px solid var(--brd);padding:10px 14px;display:flex;gap:10px;flex-wrap:wrap">
+      <div style="flex:1;min-width:70px">
+        <div style="font-family:'Share Tech Mono',monospace;font-size:8px;color:var(--mut);letter-spacing:2px">БАЛАНС</div>
+        <div style="font-family:'Space Mono',monospace;font-size:18px;color:#fff">$<span id="mtBalVal">1000.00</span></div>
+        <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--grn)" id="mtBalChg">+$0.00</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;flex:1">
+        <div style="background:rgba(0,0,0,.3);border-radius:6px;padding:6px 8px;border:1px solid var(--brd)">
+          <div style="font-size:8px;color:var(--mut);font-family:'Share Tech Mono',monospace">УГОД</div>
+          <div style="font-size:16px;color:var(--acc);font-weight:700" id="mtTrades">0</div>
+        </div>
+        <div style="background:rgba(0,0,0,.3);border-radius:6px;padding:6px 8px;border:1px solid var(--brd)">
+          <div style="font-size:8px;color:var(--mut);font-family:'Share Tech Mono',monospace">WINRATE</div>
+          <div style="font-size:16px;color:var(--grn);font-weight:700" id="mtWR">—</div>
+        </div>
+        <div style="background:rgba(0,0,0,.3);border-radius:6px;padding:6px 8px;border:1px solid var(--brd)">
+          <div style="font-size:8px;color:var(--mut);font-family:'Share Tech Mono',monospace">NET P&L</div>
+          <div style="font-size:14px;font-weight:700" id="mtNet">+$0.00</div>
+        </div>
+        <div style="background:rgba(0,0,0,.3);border-radius:6px;padding:6px 8px;border:1px solid var(--brd)">
+          <div style="font-size:8px;color:var(--mut);font-family:'Share Tech Mono',monospace">КОМІСІЇ</div>
+          <div style="font-size:14px;color:var(--yel);font-weight:700" id="mtFees">$0.00</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ML прогрес -->
+    <div style="background:var(--panel);border-bottom:1px solid var(--brd);padding:8px 14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <span style="font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--mut)">ML НАВЧАННЯ</span>
+        <span style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--acc)" id="mtMLN">0/100</span>
+      </div>
+      <div style="height:3px;background:rgba(0,255,231,.1);border-radius:2px">
+        <div id="mtMLBar" style="height:100%;width:0%;background:var(--acc);border-radius:2px;transition:width .3s"></div>
+      </div>
+      <div style="font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--mut);margin-top:3px" id="mtMLStatus">Збір даних...</div>
+    </div>
+
+    <!-- Trades list — compact cards -->
+    <div style="flex:1;overflow-y:auto;padding:8px">
+      <div id="mtTradesList" style="display:flex;flex-direction:column;gap:6px"></div>
+    </div>
+  </div>
+
 </div><!-- /body -->
 
 <div id="mnav">
   <div class="nb on" onclick="showTab('chart',this)"><div class="ni">📈</div>ГРАФІК</div>
   <div class="nb" onclick="showTab('agents',this)"><div class="ni">🤖</div>АГЕНТИ</div>
   <div class="nb" onclick="showTab('decision',this)"><div class="ni">🎯</div>РІШЕННЯ</div>
+  <div class="nb" id="tradeTab" onclick="showTab('trades',this)">
+    <div class="ni">📋</div>УГОДИ
+    <span class="nb-badge" id="openBadge" style="display:none">0</span>
+  </div>
   <div class="nb" onclick="openSettings()"><div class="ni">⚙️</div>API</div>
 </div>
 
@@ -892,12 +980,21 @@ async function fetchTrades() {
       var grossSum  = closed.reduce(function(s,t){ return s + parseFloat(t.gross_pnl||0); }, 0);
       var winsSum   = closed.filter(function(t){ return parseFloat(t.net_pnl||0) > 0; }).length;
       var wr2 = closed.length ? Math.round(winsSum / closed.length * 100) : 0;
+      // Live P&L від відкритих угод
+      var livePnl = openT.reduce(function(s,t) {
+        var ep = parseFloat(t.entry_price||0);
+        var amt = parseFloat(t.amount_usd||0);
+        var cp = (PRICES[t.pair] && PRICES[t.pair].p) ? PRICES[t.pair].p : ep;
+        var side = (t.side||'').toLowerCase();
+        if (!ep || !amt) return s;
+        return s + (side==='buy' ? (cp-ep)/ep*amt : (ep-cp)/ep*amt);
+      }, 0);
       updateStats({
         total:      closed.length,
         winrate:    wr2,
-        gross_pnl:  grossSum,
+        gross_pnl:  grossSum + livePnl,
         fees:       totalFee2,
-        net_pnl:    grossSum - totalFee2,
+        net_pnl:    grossSum + livePnl - totalFee2,
         balance:    balance,
         open_trades: openT,
         open_count:  openT.length,
@@ -1026,6 +1123,58 @@ cv.addEventListener('mouseleave', () => {
   draw();
 });
 
+// ── Touch підтримка для графіку (pinch zoom + pan) ──────────────
+var touchState = {start: [], lastDist: 0, lastX: 0, dragging: false};
+
+cv.addEventListener('touchstart', function(e) {
+  e.preventDefault();
+  if (e.touches.length === 1) {
+    touchState.dragging = true;
+    touchState.lastX    = e.touches[0].clientX;
+  } else if (e.touches.length === 2) {
+    touchState.dragging = false;
+    var dx = e.touches[0].clientX - e.touches[1].clientX;
+    var dy = e.touches[0].clientY - e.touches[1].clientY;
+    touchState.lastDist = Math.sqrt(dx*dx + dy*dy);
+  }
+}, {passive: false});
+
+cv.addEventListener('touchmove', function(e) {
+  e.preventDefault();
+  var PRICE_SCALE = 72;
+  var chartW2 = cv.offsetWidth - PRICE_SCALE;
+
+  if (e.touches.length === 2) {
+    // Pinch zoom
+    var dx = e.touches[0].clientX - e.touches[1].clientX;
+    var dy = e.touches[0].clientY - e.touches[1].clientY;
+    var dist = Math.sqrt(dx*dx + dy*dy);
+    if (touchState.lastDist > 0) {
+      var ratio = touchState.lastDist / dist;
+      var newCount = Math.max(20, Math.min(candles.length, chartView.count * ratio));
+      var cx2 = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      var mx = Math.max(0, Math.min(1, (cx2 - cv.getBoundingClientRect().left) / chartW2));
+      var anchor = chartView.offset + mx * chartView.count;
+      chartView.offset = Math.max(0, Math.min(candles.length - newCount, anchor - mx * newCount));
+      chartView.count  = newCount;
+      draw();
+    }
+    touchState.lastDist = dist;
+  } else if (e.touches.length === 1 && touchState.dragging) {
+    // Pan
+    var dx2 = e.touches[0].clientX - touchState.lastX;
+    var dpx  = dx2 / (chartW2 / chartView.count);
+    chartView.offset = Math.max(0, Math.min(candles.length - chartView.count, chartView.offset - dpx));
+    touchState.lastX = e.touches[0].clientX;
+    draw();
+  }
+}, {passive: false});
+
+cv.addEventListener('touchend', function(e) {
+  touchState.dragging = false;
+  touchState.lastDist = 0;
+}, {passive: true});
+
 // Zoom колесом миші
 cv.addEventListener('wheel', e => {
   e.preventDefault();
@@ -1076,7 +1225,7 @@ function draw() {
   if (data.length < 2) return;
 
   // ── Розміри зон ──────────────────────────────────────────────
-  const PRICE_SCALE = 62;  // права шкала цін
+  const PRICE_SCALE = 72;  // права шкала цін
   const TIME_SCALE  = 22;  // нижня шкала часу
   const VOL_H       = Math.floor(H * 0.18); // висота volume
   const TOP         = 10;
@@ -1098,7 +1247,7 @@ function draw() {
   const lo    = mn - pad, hi = mx + pad, priceRng = hi - lo;
 
   const candleW = Math.max(1.5, (chartW / slice.length) * 0.82);
-  const MARG    = candleW + 20;  // ~1 см відступ від краю
+  const MARG    = Math.max(30, candleW + 22);  // ~1 см відступ
   const tx      = i => MARG + (i / Math.max(1, slice.length - 1)) * (chartW - MARG * 2);
   const ty = v  => TOP + chartH - (v - lo) / priceRng * chartH;
 
@@ -1125,11 +1274,11 @@ function draw() {
     const label = v >= 1000
       ? '$' + v.toLocaleString('en', {maximumFractionDigits: 0})
       : '$' + v.toFixed(2);
-    cx.fillStyle = 'rgba(6,13,16,.95)';
-    cx.fillRect(chartW + 1, y - 8, PRICE_SCALE - 1, 16);
-    cx.fillStyle = 'rgba(180,220,230,1)';
-    cx.font = '9px Share Tech Mono';
-    cx.fillText(label, chartW + 5, y + 4);
+    cx.fillStyle = 'rgba(4,10,14,.98)';
+    cx.fillRect(chartW + 2, y - 9, PRICE_SCALE - 3, 18);
+    cx.fillStyle = '#c0e0ea';
+    cx.font = '10px Share Tech Mono';
+    cx.fillText(label, chartW + 6, y + 4);
   }
 
   // ── Вертикальна часова сітка ──────────────────────────────────
@@ -1248,15 +1397,17 @@ function draw() {
     cx.font = 'bold 10px Share Tech Mono';
     const lblW = cx.measureText(priceStr).width + 12;
     // Яскравий бейдж поточної ціни
-    cx.fillStyle = lCol;
-    cx.fillRect(chartW + 1, ly - 10, PRICE_SCALE - 1, 20);
-    cx.fillStyle = '#000';
-    cx.fillText(priceStr, chartW + 4, ly + 4);
-    // Маленький трикутник-вказівник
+    cx.shadowBlur = 10; cx.shadowColor = lCol;
+    cx.fillStyle   = lCol;
+    cx.fillRect(chartW + 1, ly - 12, PRICE_SCALE - 1, 24);
+    cx.shadowBlur  = 0;
+    cx.fillStyle   = '#000';
+    cx.font        = 'bold 11px Share Tech Mono';
+    cx.fillText(priceStr, chartW + 5, ly + 6);
     cx.beginPath();
-    cx.moveTo(chartW - 6, ly);
-    cx.lineTo(chartW + 1, ly - 5);
-    cx.lineTo(chartW + 1, ly + 5);
+    cx.moveTo(chartW - 8, ly);
+    cx.lineTo(chartW + 1, ly - 7);
+    cx.lineTo(chartW + 1, ly + 7);
     cx.closePath();
     cx.fillStyle = lCol;
     cx.fill();
@@ -1343,11 +1494,11 @@ function draw() {
     const cprice = lo + (1 - (crosshair.y - TOP) / chartH) * priceRng;
     if (cprice > 0) {
       const cStr = '$' + cprice.toLocaleString('en', {maximumFractionDigits:2});
-      cx.font = '9px Share Tech Mono';
-      cx.fillStyle = 'rgba(0,255,231,.9)';
-      cx.fillRect(chartW + 1, crosshair.y - 9, PRICE_SCALE - 2, 16);
-      cx.fillStyle = '#020608';
-      cx.fillText(cStr, chartW + 4, crosshair.y + 3);
+      cx.fillStyle = 'rgba(0,255,231,.95)';
+      cx.fillRect(chartW + 1, crosshair.y - 10, PRICE_SCALE - 1, 20);
+      cx.fillStyle = '#000';
+      cx.font = 'bold 10px Share Tech Mono';
+      cx.fillText(cStr, chartW + 5, crosshair.y + 4);
     }
   }
 
@@ -1496,9 +1647,65 @@ function fgClass(fg) {
   return fg < 30 ? 'bull' : fg > 70 ? 'bear' : 'neut';
 }
 
+function renderMobileTrades(list) {
+  var el = g('mtTradesList');
+  if (!el || !list) return;
+  if (!list.length) {
+    el.innerHTML = '<div style="text-align:center;color:var(--mut);padding:30px;font-family:Share Tech Mono,monospace;font-size:11px">Угод ще немає<br>Бот відкриє першу угоду автоматично</div>';
+    return;
+  }
+  el.innerHTML = list.slice(0, 50).map(function(t) {
+    var entry  = parseFloat(t.entry_price || 0);
+    var amt    = parseFloat(t.amount_usd  || 0);
+    var sl     = parseFloat(t.sl_price    || 0);
+    var tp     = parseFloat(t.tp_price    || 0);
+    var fee    = parseFloat(t.fee_usd     || 0);
+    var net    = parseFloat(t.net_pnl     || 0);
+    var status = (t.status || 'OPEN').toUpperCase();
+    var side   = (t.side || '').toLowerCase();
+    var ts     = (t.ts_open || '').split('T')[1] || (t.ts_open || '').substring(0,10) || '—';
+    ts = ts.substring(0,8);
+
+    // Live PnL for open trades
+    var pnlVal = net, pnlLive = false;
+    if (status === 'OPEN') {
+      var cp = PRICES[t.pair] ? PRICES[t.pair].p : entry;
+      var lp = side === 'buy' ? (cp - entry) / entry * amt : (entry - cp) / entry * amt;
+      pnlVal = lp - fee;
+      pnlLive = true;
+    }
+
+    var pnlColor = pnlVal >= 0 ? 'var(--grn)' : 'var(--red)';
+    var statusColor = status === 'OPEN' ? 'var(--acc)' : status === 'TP' ? 'var(--grn)' : status === 'SL' ? 'var(--red)' : 'var(--mut)';
+    var sideColor = side === 'buy' ? 'var(--grn)' : 'var(--red)';
+
+    return '<div style="background:rgba(6,13,16,.9);border:1px solid var(--brd);border-radius:10px;padding:10px 12px;border-left:3px solid '+ sideColor +'">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
+        '<div style="display:flex;align-items:center;gap:8px">' +
+          '<span style="font-family:Space Mono,monospace;font-size:13px;color:#fff;font-weight:700">' + (t.pair || '') + '</span>' +
+          '<span style="background:' + sideColor + '22;color:' + sideColor + ';border:1px solid ' + sideColor + '44;border-radius:4px;padding:1px 6px;font-family:Share Tech Mono,monospace;font-size:9px;font-weight:700">' + (t.side || '') + '</span>' +
+        '</div>' +
+        '<span style="color:' + statusColor + ';font-family:Share Tech Mono,monospace;font-size:9px;border:1px solid ' + statusColor + '44;border-radius:4px;padding:1px 6px">' + status + '</span>' +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px">' +
+        '<div><div style="font-size:7px;color:var(--mut);font-family:Share Tech Mono,monospace">ЦІНА ВХОДУ</div><div style="font-size:11px;font-weight:700">$' + fmt(entry) + '</div></div>' +
+        '<div><div style="font-size:7px;color:var(--mut);font-family:Share Tech Mono,monospace">СУМА</div><div style="font-size:11px;font-weight:700;color:var(--yel)">$' + fmt(amt, 0) + '</div></div>' +
+        '<div><div style="font-size:7px;color:var(--mut);font-family:Share Tech Mono,monospace">P&L' + (pnlLive?' live':'') + '</div><div style="font-size:13px;font-weight:700;color:' + pnlColor + '">' + (pnlVal >= 0 ? '+' : '') + '$' + fmt(pnlVal) + '</div></div>' +
+        '<div><div style="font-size:7px;color:var(--mut);font-family:Share Tech Mono,monospace">SL</div><div style="font-size:10px;color:var(--red)">' + (sl ? '$' + fmt(sl) : '—') + '</div></div>' +
+        '<div><div style="font-size:7px;color:var(--mut);font-family:Share Tech Mono,monospace">TP</div><div style="font-size:10px;color:var(--grn)">' + (tp ? '$' + fmt(tp) : '—') + '</div></div>' +
+        '<div><div style="font-size:7px;color:var(--mut);font-family:Share Tech Mono,monospace">FEE</div><div style="font-size:10px;color:var(--yel)">-$' + fmt(fee, 4) + '</div></div>' +
+      '</div>' +
+      '<div style="margin-top:4px;font-size:8px;color:var(--mut);font-family:Share Tech Mono,monospace">' + ts + '</div>' +
+    '</div>';
+  }).join('');
+}
+
 function renderTrades(list, prepend=false) {
   const tbody = g('tradesBody');
   if (!tbody || !list) return;
+  // Зберігаємо список для mobile
+  trades = list;
+  if (currentTab === 'trades') renderMobileTrades(list);
   tbody.innerHTML = list.slice(0,25).map(function(t, i) {
     const entry  = t.entry_price || t.price || 0;
     const amt    = t.amount_usd  || t.amt   || 0;
@@ -1561,9 +1768,18 @@ function renderTrades(list, prepend=false) {
 function updateStats(data) {
   var net   = parseFloat(data.net_pnl   || 0);
   var fees  = parseFloat(data.fees      || 0);
+  // Додаємо комісії відкритих угод якщо є
+  if (Array.isArray(data.open_trades) && data.open_trades.length > 0) {
+    var openFees = data.open_trades.reduce(function(s,t){ return s+parseFloat(t.fee_usd||0); }, 0);
+    fees = fees + openFees;
+  }
   var gross = parseFloat(data.gross_pnl || 0);
   var bal   = parseFloat(data.balance   || balance || 1000);
-  var total = parseInt(data.total       || 0);
+  // Рахуємо ВСІ угоди: закриті + відкриті
+  var closedCount = parseInt(data.total || 0);
+  var openCount2  = Array.isArray(data.open_trades) ? data.open_trades.length
+                  : parseInt(data.open_count || 0);
+  var total = closedCount + openCount2;
   var wr    = parseFloat(data.winrate   || 0);
   var chg   = bal - sBal;
   var pct   = sBal > 0 ? (chg / sBal * 100).toFixed(2) : '0.00';
@@ -1605,6 +1821,19 @@ function updateStats(data) {
 
   // ── Оновити баланс глобально ──────────────────────────────────
   if (bal > 0) balance = bal;
+
+  // ── Оновити mobile trades stats ─────────────────────────────────
+  var setMT = function(id, v) { if (g(id)) g(id).textContent = v; };
+  setMT('mtBalVal', fmt(bal));
+  setMT('mtTrades', total);
+  setMT('mtWR',     wr && closedCount ? wr.toFixed(1) + '%' : '—');
+  var mtNetEl = g('mtNet');
+  if (mtNetEl) { mtNetEl.textContent = (net>=0?'+':'')+'$'+fmt(net); mtNetEl.style.color = net>=0?'var(--grn)':'var(--red)'; }
+  setMT('mtFees', '$' + fmt(fees, 4));
+  if (g('mtBalChg')) { g('mtBalChg').textContent = (chg>=0?'+':'')+'$'+fmt(chg)+' ('+(chg>=0?'+':'')+pct+'%)'; g('mtBalChg').style.color = chg>=0?'var(--grn)':'var(--red)'; }
+  // Badge на таб з кількістю відкритих угод
+  var badge = g('openBadge');
+  if (badge) { if (openCount > 0) { badge.textContent = openCount; badge.style.display = 'inline'; } else { badge.style.display = 'none'; } }
 
   // ── Зберігаємо в localStorage після кожного оновлення ──────────
   try {
@@ -1648,6 +1877,13 @@ function updateMLStats() {
       g('mlStatus').textContent = 'Готовий до навчання';
     }
   }
+  // Мобільний ML прогрес
+  if (g('mtMLN'))      g('mtMLN').textContent = mlTradesN + '/' + mlTarget;
+  if (g('mtMLBar'))    g('mtMLBar').style.width = Math.min(100, mlTradesN/mlTarget*100) + '%';
+  if (g('mtMLStatus')) g('mtMLStatus').textContent = mlTradesN < mlTarget
+    ? 'Збір даних (ще ' + (mlTarget - mlTradesN) + ')'
+    : mlAccuracy ? 'Модель активна' : 'Готовий до навчання';
+
   // Зберігаємо ML прогрес
   try {
     localStorage.setItem('nt_ml', JSON.stringify({
@@ -1928,14 +2164,56 @@ function selPair(pair, el) {
 }
 
 function showTab(tab, btn) {
-  document.querySelectorAll('.nb').forEach(b=>b.classList.remove('on'));
-  btn.classList.add('on');
-  const pc=g('pChart'),pa=g('mpAgents'),pd=g('mpDecision');
-  [pc,pa,pd].forEach(el=>{el.style.display='none';el.classList.remove('vis');});
-  if(tab==='chart'){pc.style.display='flex';pc.classList.add('vis');}
-  if(tab==='agents'){pa.style.display='flex';pa.classList.add('vis');}
-  if(tab==='decision'){pd.style.display='flex';pd.classList.add('vis');}
+  document.querySelectorAll('.nb').forEach(b => b.classList.remove('on'));
+  if (btn) btn.classList.add('on');
+  const panels = {
+    chart:    g('pChart'),
+    agents:   g('mpAgents'),
+    decision: g('mpDecision'),
+    trades:   g('mpTrades'),
+  };
+  Object.values(panels).forEach(el => {
+    if (el) { el.style.display = 'none'; el.classList.remove('vis'); }
+  });
+  const el = panels[tab];
+  if (el) { el.style.display = 'flex'; el.classList.add('vis'); }
+  currentTab = tab;
+  // Оновити trades при переключенні на цей таб
+  if (tab === 'trades') renderMobileTrades(trades);
 }
+
+var currentTab = 'chart';
+var swipeStartX = 0;
+var swipeStartY = 0;
+var tabOrder = ['chart', 'agents', 'decision', 'trades'];
+
+// Swipe між табами
+document.addEventListener('touchstart', function(e) {
+  swipeStartX = e.touches[0].clientX;
+  swipeStartY = e.touches[0].clientY;
+}, {passive: true});
+
+document.addEventListener('touchend', function(e) {
+  var dx = e.changedTouches[0].clientX - swipeStartX;
+  var dy = e.changedTouches[0].clientY - swipeStartY;
+  // Тільки горизонтальний swipe (не вертикальний скрол)
+  if (Math.abs(dx) < 50 || Math.abs(dy) > Math.abs(dx) * 0.7) return;
+  // Не swipe на графіку (canvas)
+  if (e.target && e.target.tagName === 'CANVAS') return;
+
+  var idx = tabOrder.indexOf(currentTab);
+  if (dx < -50 && idx < tabOrder.length - 1) {
+    // Свайп вліво → наступний таб
+    var nextTab = tabOrder[idx + 1];
+    var nextBtn = document.querySelector('#mnav .nb:nth-child(' + (idx + 2) + ')');
+    showTab(nextTab, nextBtn);
+  } else if (dx > 50 && idx > 0) {
+    // Свайп вправо → попередній таб
+    var prevTab = tabOrder[idx - 1];
+    var prevBtn = document.querySelector('#mnav .nb:nth-child(' + idx + ')');
+    showTab(prevTab, prevBtn);
+  }
+}, {passive: true});
 
 // ════════════════════════════════════════════════════════════
 //  INIT
@@ -1948,7 +2226,9 @@ rsz(); initHist(); draw();
 fetchKlines(curPair, curTF).then(ok => { if (!ok) initHist(); });
 // Одразу підключаємо Binance WS для реальних цін
 startBinanceWS(curPair);
-if(window.innerWidth<=900) showTab('chart',document.querySelector('.nb'));
+if(window.innerWidth<=900) {
+  showTab('chart', document.querySelector('#mnav .nb'));
+}
 
 addLog('ok',  'NeuralTrade AI v4.0 — Multi-Agent System');
 addLog('info','Натисни "ПІДКЛЮЧИТИ" щоб з\'єднатись з Python сервером');
