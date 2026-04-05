@@ -623,7 +623,14 @@ function handleServerMsg(msg) {
     case 'prices':
       for (const [pair, price] of Object.entries(msg.prices)) {
         if (PRICES[pair]) PRICES[pair].p = price;
-        if (pair === curPair) updatePriceDisplay(price);
+        if (pair === curPair) {
+          updatePriceDisplay(price);
+          // Оновлюємо графік
+          hist.push(price);
+          if (hist.length > 120) hist.shift();
+          mkrs = mkrs.map(m => ({...m, i: m.i - 1}));
+          draw();
+        }
       }
       break;
 
