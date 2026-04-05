@@ -652,11 +652,24 @@ function handleServerMsg(msg) {
   switch(msg.type) {
     case 'init':
       updateStats(msg);
-      if (msg.trades) renderTrades(msg.trades);
-      if (msg.mode) updateModeUI(msg.mode);
-      // Читаємо mlTarget з конфігу сервера
+      if (msg.trades)  renderTrades(msg.trades);
+      if (msg.mode)    updateModeUI(msg.mode);
       if (msg.config && msg.config.min_trades_for_train) {
         mlTarget = msg.config.min_trades_for_train;
+      }
+      // Відновити ML статистику з сервера
+      if (msg.ml_stats) {
+        mlTradesN  = msg.ml_stats.n_samples || 0;
+        mlAccuracy = msg.ml_stats.accuracy  || null;
+        updateMLStats();
+      }
+      // Відновити індикатори якщо є кешовані
+      if (msg.last_tech && msg.last_tech[curPair]) {
+        var lt = msg.last_tech[curPair];
+        updateIndicator('rsi',  lt.rsi ? lt.rsi.toFixed(1) : '—', sigClass(lt.rsi||50, 35, 65));
+        updateIndicator('macd', lt.macd !== undefined ? (lt.macd>0?'+':'')+lt.macd.toFixed(0) : '—', (lt.macd||0)>0?'bull':'bear');
+        updateIndicator('fg',   lt.fear_greed ? lt.fear_greed.toFixed(0) : '—', fgClass(lt.fear_greed||50));
+        updateIndicator('fund', lt.funding !== undefined ? (lt.funding*100).toFixed(4)+'%' : '—', 'neut');
       }
       break;
 
@@ -675,10 +688,24 @@ function handleServerMsg(msg) {
 
     case 'tech_result':
       if (msg.pair === curPair) {
-        updateIndicator('rsi',  msg.rsi,  sigClass(msg.rsi, 35, 65));
-        updateIndicator('macd', msg.macd > 0 ? `+${msg.macd.toFixed(0)}` : msg.macd.toFixed(0), msg.macd > 0 ? 'bull' : 'bear');
-        updateSigBar('sig_rsi', `◆ RSI ${msg.rsi}`, msg.rsi < 35 ? 'b' : msg.rsi > 65 ? 's' : 'n');
-        addLog('info', `📊 Tech ${msg.pair}: ${msg.signal} RSI=${msg.rsi}`);
+        var rsiV = msg.rsi ? msg.rsi.toFixed(1) : '—';
+        var macdV = msg.macd !== undefined ? (msg.macd>0?'+':'')+msg.macd.toFixed(0) : '—';
+        var macdCls = (msg.macd||0) > 0 ? 'bull' : 'bear';
+        updateIndicator('rsi',  rsiV,  sigClass(msg.rsi||50, 35, 65));
+        updateIndicator('macd', macdV, macdCls);
+        // MA20, BB%
+        if (msg.ma20 && msg.price) {
+          var ma20dist = ((msg.price - msg.ma20) / msg.ma20 * 100).toFixed(2);
+          updateIndicator('ma20', '$'+fmt(msg.ma20), msg.price > msg.ma20 ? 'bull' : 'bear');
+        }
+        if (msg.bb_pct !== undefined) {
+          updateIndicator('bb', (msg.bb_pct*100).toFixed(0)+'%', msg.bb_pct < 0.2 ? 'bull' : msg.bb_pct > 0.8 ? 'bear' : 'neut');
+        }
+        updateSigBar('sig_rsi', '◆ RSI ' + (msg.rsi||0).toFixed(1), (msg.rsi||50) < 35 ? 'b' : (msg.rsi||50) > 65 ? 's' : 'n');
+        if (msg.macd_h !== undefined) {
+          updateSigBar('sig_ma', msg.macd_h > 0 ? '▲ MACD+' : '▼ MACD-', msg.macd_h > 0 ? 'b' : 's');
+        }
+        addLog('info', '📊 Tech ' + msg.pair + ': ' + msg.signal + ' RSI=' + (msg.rsi||0).toFixed(1) + ' MACD=' + (msg.macd||0).toFixed(0));
       }
       break;
 
@@ -727,7 +754,17 @@ function handleServerMsg(msg) {
 
     case 'stats_update':
       updateStats(msg);
-      if (msg.open_trades) renderTrades(msg.open_trades, true);
+      // Оновити всі угоди (відкриті + закриті)
+      if (msg.open_trades && msg.open_trades.length > 0) {
+        renderTrades(msg.open_trades, false);
+      } else {
+        fetchTrades(); // Завантажити з сервера
+      }
+      // Оновити ML stats якщо є
+      if (msg.ml_samples !== undefined) {
+        mlTradesN = msg.ml_samples;
+        updateMLStats();
+      }
       break;
 
     case 'ml_retrained':
@@ -951,7 +988,8 @@ function draw() {
   const lo    = mn - pad, hi = mx + pad, priceRng = hi - lo;
 
   const candleW = Math.max(1.5, (chartW / slice.length) * 0.82);
-  const tx = i => (i + 0.5) / slice.length * chartW;
+  const MARG    = candleW + 2;
+  const tx      = i => MARG + (i / Math.max(1, slice.length - 1)) * (chartW - MARG * 2);
   const ty = v  => TOP + chartH - (v - lo) / priceRng * chartH;
 
   // ── Фон сітки ─────────────────────────────────────────────────
@@ -1435,7 +1473,19 @@ function updateStats(data) {
   g('bFee').textContent='-$'+fmt(fees,4);
   g('bNet').textContent=(net>=0?'+':'')+'$'+fmt(net);
   g('bNet').className=(net>=0?'bsv pg':'bsv prr');
-  if(data.open_trades) g('bOpen').textContent=data.open_trades.length||0;
+  // Лічильник відкритих угод
+  var openCount = 0;
+  if (data.open_trades) openCount = Array.isArray(data.open_trades) ? data.open_trades.length : parseInt(data.open_trades)||0;
+  else if (data.open_count !== undefined) openCount = parseInt(data.open_count)||0;
+  g('bOpen').textContent = openCount;
+  // Лічильник угод (УГОД: X)
+  var totalCount = parseInt(data.total||0);
+  if (g('statTrades')) g('statTrades').textContent = totalCount;
+  if (g('mStatT'))     g('mStatT').textContent = totalCount;
+  // Winrate
+  var wrVal = parseFloat(data.winrate||0);
+  if (g('statWR')) { g('statWR').textContent = wrVal ? wrVal.toFixed(1)+'%' : '—'; }
+  if (g('mStatW')) { g('mStatW').textContent = wrVal ? wrVal.toFixed(1)+'%' : '—'; }
 }
 
 function localUpdateStats() {

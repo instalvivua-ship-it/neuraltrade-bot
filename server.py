@@ -280,16 +280,22 @@ async def ws_endpoint(ws: WebSocket):
         _ws_clients.add(ws)
     log.info(f"WS підключено | клієнтів: {len(_ws_clients)}")
 
+    stats = db.get_stats()
     await ws.send_json({
-        "type": "init",
-        "stats": db.get_stats(),
+        "type":    "init",
+        "stats":   stats,
         "balance": executor.get_balance(),
-        "mode": cfg.mode,
-        "paused": tg.is_paused,
-        "config": cfg.to_dict(),
-        "trades": db.get_trades(limit=20),
+        "mode":    cfg.mode,
+        "paused":  tg.is_paused,
+        "config":  cfg.to_dict(),
+        "trades":  db.get_trades(limit=50),
         "regimes": _current_regimes,
         "metrics": {p: ml.get_metrics(p) for p in cfg.pairs},
+        "ml_stats": {
+            "n_samples": stats.get("total", 0),
+            "accuracy":  stats.get("accuracy", None),
+        },
+        "open_count": len(db.get_open_trades()),
     })
 
     try:
@@ -351,12 +357,16 @@ def run_trading_cycle():
                         "message":f"Помилка [{pair}]: {e}"})
 
     executor.check_open_trades()
+    _stats = db.get_stats()
+    _open  = db.get_open_trades()
     _queue_msg({
-        "type": "stats_update",
-        **db.get_stats(),
-        "balance": executor.get_balance(),
-        "open_trades": db.get_open_trades(),
-        "paused": tg.is_paused,
+        "type":       "stats_update",
+        **_stats,
+        "balance":    executor.get_balance(),
+        "open_trades": _open,
+        "open_count":  len(_open),
+        "ml_samples":  _stats.get("total", 0),
+        "paused":     tg.is_paused,
     })
 
     # Перевірка drawdown
