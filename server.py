@@ -68,19 +68,22 @@ app.add_middleware(
 _API_KEY_FILE = "api_key.secret"
 
 def _load_or_create_api_key() -> str:
-    """Генерує API ключ при першому запуску, зберігає локально."""
+    # Спочатку перевіряємо змінну середовища
+    env_key = os.environ.get("NEURALTRADE_API_KEY")
+    if env_key:
+        return env_key
+    # Потім файл
     if os.path.exists(_API_KEY_FILE):
         with open(_API_KEY_FILE) as f:
             key = f.read().strip()
         if key:
             return key
+    # Генеруємо новий
     key = secrets.token_urlsafe(32)
     with open(_API_KEY_FILE, "w") as f:
         f.write(key)
-    os.chmod(_API_KEY_FILE, 0o600)  # тільки власник може читати
-    log.info(f"🔑 Новий API ключ згенеровано → {_API_KEY_FILE}")
+    log.info(f"🔑 Новий API ключ → {_API_KEY_FILE}")
     log.info(f"🔑 API KEY: {key}")
-    log.info(f"🔑 Збережи цей ключ — він потрібен для Dashboard!")
     return key
 
 _SERVER_API_KEY = _load_or_create_api_key()
