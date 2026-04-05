@@ -148,6 +148,130 @@ class TechAnalystAgent:
         self._price_cache[pair] = (p, time.time())
         return p
 
+    def get_orderbook_features(self, pair: str) -> Dict[str, float]:
+        """
+        Отримує Order Book imbalance + CVD з Bybit.
+
+        OBI (Order Book Imbalance):
+            > 0.6 = тиск покупців (bullish)
+            < 0.4 = тиск продавців (bearish)
+
+        CVD (Cumulative Volume Delta):
+            Позитивний = більше buy volume (bullish)
+            Негативний = більше sell volume (bearish)
+        """
+        default = {"obi": 0.5, "cvd": 0.0, "spread_pct": 0.0,
+                   "bid_wall": 0.0, "ask_wall": 0.0}
+        try:
+            sym = pair.replace("/", "")
+
+            # ── Order Book (топ 25 рівнів) ────────────────────────
+            r = requests.get(
+                f"https://api.bybit.com/v5/market/orderbook"
+                f"?category=spot&symbol={sym}&limit=25",
+                timeout=5
+            )
+            if r.status_code != 200:
+                return default
+            ob = r.json().get("result", {})
+            bids = ob.get("b", [])  # [[price, qty], ...]
+            asks = ob.get("a", [])
+            if not bids or not asks:
+                return default
+
+            # OBI = bid_volume / (bid_volume + ask_volume)
+            bid_vol = sum(float(b[1]) for b in bids[:10])
+            ask_vol = sum(float(a[1]) for a in asks[:10])
+            total_vol = bid_vol + ask_vol
+            obi = bid_vol / total_vol if total_vol > 0 else 0.5
+
+            # Bid/Ask wall — найбільший рівень
+            bid_wall = max(float(b[1]) for b in bids[:10]) if bids else 0.0
+            ask_wall = max(float(a[1]) for a in asks[:10]) if asks else 0.0
+
+            # Спред
+            best_bid = float(bids[0][0])
+            best_ask = float(asks[0][0])
+            spread_pct = (best_ask - best_bid) / best_bid * 100 if best_bid > 0 else 0.0
+
+            # ── CVD з останніх 200 угод ────────────────────────────
+            r2 = requests.get(
+                f"https://api.bybit.com/v5/market/recent-trade"
+                f"?category=spot&symbol={sym}&limit=200",
+                timeout=5
+            )
+            cvd = 0.0
+            if r2.status_code == 200:
+                trades = r2.json().get("result", {}).get("list", [])
+                for t in trades:
+                    qty  = float(t.get("size", 0))
+                    side = t.get("side", "")
+                    if side == "Buy":
+                        cvd += qty
+                    elif side == "Sell":
+                        cvd -= qty
+                # Нормалізуємо CVD як % від загального об'єму
+                total_trade_vol = sum(float(t.get("size", 0)) for t in trades)
+                if total_trade_vol > 0:
+                    cvd = cvd / total_trade_vol  # -1..+1
+
+            log.debug(f"OB {pair}: OBI={obi:.3f} CVD={cvd:.3f} spread={spread_pct:.4f}%")
+            return {
+                "obi":       round(obi, 4),
+                "cvd":       round(cvd, 4),
+                "spread_pct": round(spread_pct, 5),
+                "bid_wall":  round(bid_wall, 2),
+                "ask_wall":  round(ask_wall, 2),
+            }
+        except Exception as e:
+            log.debug(f"OB {pair}: {e}")
+            return default
+
+    def fetch_ohlcv_tf(self, pair: str, tf: str, limit: int = 100) -> Optional["pd.DataFrame"]:
+        """Завантажує OHLCV для конкретного таймфрейму (з кешем 5 хв)."""
+        cache_key = f"{pair}_{tf}"
+        if cache_key in self._ohlcv_cache:
+            df, ts = self._ohlcv_cache[cache_key]
+            if time.time() - ts < self._ohlcv_ttl:
+                return df
+        try:
+            sym = pair.replace("/", "")
+            tf_map = {"1m":"1","5m":"5","15m":"15","1h":"60","4h":"240","1d":"D"}
+            interval = tf_map.get(tf, "60")
+            r = requests.get(
+                f"https://api.bybit.com/v5/market/kline"
+                f"?category=spot&symbol={sym}&interval={interval}&limit={limit}",
+                timeout=8
+            )
+            if r.status_code == 200:
+                items = r.json().get("result", {}).get("list", [])
+                if items and len(items) >= 30:
+                    items = list(reversed(items))
+                    df = pd.DataFrame(items, columns=["ts","open","high","low","close","volume","turnover"])
+                    for col in ["open","high","low","close","volume"]:
+                        df[col] = pd.to_numeric(df[col], errors="coerce")
+                    df["ts"] = pd.to_datetime(df["ts"].astype(int), unit="ms")
+                    df = df.dropna()
+                    if len(df) >= 20:
+                        self._ohlcv_cache[cache_key] = (df, time.time())
+                        return df
+        except Exception as e:
+            log.debug(f"OHLCV {pair} {tf}: {e}")
+        return None
+
+    def _quick_rsi(self, c, window=14) -> float:
+        """Швидкий RSI без зовнішніх бібліотек."""
+        try:
+            if HAS_TA_LIB:
+                return float(ta_lib.momentum.RSIIndicator(c, window=window).rsi().iloc[-1])
+            delta = c.diff()
+            gain  = delta.clip(lower=0).rolling(window).mean()
+            loss  = (-delta.clip(upper=0)).rolling(window).mean()
+            rs    = gain / loss.replace(0, 1e-10)
+            return float(100 - 100 / (1 + rs.iloc[-1]))
+        except Exception:
+            return 50.0
+
     def fetch_ohlcv(self, pair: str, limit: int = 200, force: bool = False) -> Optional["pd.DataFrame"]:
         """
         Завантажує свічки через:
@@ -326,9 +450,68 @@ class TechAnalystAgent:
             if regime == "volatile": score *= 0.4; reasons.insert(0, "⚠️ Volatile")
 
             confidence = max(0.1, min(0.95, (score + 0.7) / 1.4))
-            if score > 0.15:    signal = "BUY"
-            elif score < -0.15: signal = "SELL"
-            else:               signal = "HOLD"
+            # В DEMO режимі — нижчий поріг для швидшого збору зразків ML
+            demo_mode = getattr(self.cfg, 'mode', 'demo') == 'demo'
+            threshold = 0.08 if demo_mode else 0.15  # 0.08 замість 0.15
+            if score > threshold:    signal = "BUY"
+            elif score < -threshold: signal = "SELL"
+            else:                    signal = "HOLD"
+
+            # ── MTF: 5m і 15m для підтвердження ──────────────────
+            mtf_score   = 0.0
+            mtf_reasons = []
+            for tf_check in ["5m", "15m"]:
+                try:
+                    df_tf = self.fetch_ohlcv_tf(pair, tf_check, limit=60)
+                    if df_tf is not None and len(df_tf) >= 20:
+                        c_tf  = df_tf["close"].astype(float)
+                        rsi_tf = self._quick_rsi(c_tf)
+                        ema12  = float(c_tf.ewm(span=12).mean().iloc[-1])
+                        ema26  = float(c_tf.ewm(span=26).mean().iloc[-1])
+                        macd_tf = ema12 - ema26
+                        ma20_tf = float(c_tf.rolling(20).mean().iloc[-1])
+                        p_tf    = float(c_tf.iloc[-1])
+                        # Напрямок на цьому TF
+                        tf_bull = (rsi_tf < 50 and macd_tf > 0) or (p_tf > ma20_tf and macd_tf > 0)
+                        tf_bear = (rsi_tf > 50 and macd_tf < 0) or (p_tf < ma20_tf and macd_tf < 0)
+                        if tf_bull:
+                            mtf_score += 0.08
+                            mtf_reasons.append(f"{tf_check}↑")
+                        elif tf_bear:
+                            mtf_score -= 0.08
+                            mtf_reasons.append(f"{tf_check}↓")
+                except Exception:
+                    pass
+
+            # ── Order Book + CVD ──────────────────────────────────
+            ob = self.get_orderbook_features(pair)
+            obi = ob["obi"]
+            cvd = ob["cvd"]
+
+            # OBI: > 0.6 = купці домінують, < 0.4 = продавці
+            if obi > 0.62:
+                mtf_score += 0.10; mtf_reasons.append(f"OBI={obi:.2f}↑")
+            elif obi < 0.38:
+                mtf_score -= 0.10; mtf_reasons.append(f"OBI={obi:.2f}↓")
+
+            # CVD: позитивний = buy volume переважає
+            if cvd > 0.15:
+                mtf_score += 0.08; mtf_reasons.append(f"CVD+{cvd:.2f}")
+            elif cvd < -0.15:
+                mtf_score -= 0.08; mtf_reasons.append(f"CVD{cvd:.2f}")
+
+            # Додаємо MTF+OB до основного score
+            score += mtf_score
+            if mtf_reasons:
+                reasons.extend(mtf_reasons)
+
+            # Перерахуємо signal з новим score
+            demo_mode = getattr(self.cfg, 'mode', 'demo') == 'demo'
+            threshold = 0.08 if demo_mode else 0.15
+            if score > threshold:    signal = "BUY"
+            elif score < -threshold: signal = "SELL"
+            else:                    signal = "HOLD"
+            confidence = max(0.1, min(0.95, (score + 0.7) / 1.4))
 
             return {
                 "pair": pair, "price": price, "signal": signal,
@@ -346,6 +529,10 @@ class TechAnalystAgent:
                 "ret1": ret1, "ret3": ret3, "ret5": ret5,
                 "hour_of_day": hour_of_day,
                 "reasons": reasons,
+                # Нові features
+                "obi": obi, "cvd": cvd,
+                "spread_pct": ob["spread_pct"],
+                "mtf_score": round(mtf_score, 3),
             }
 
         except Exception as e:

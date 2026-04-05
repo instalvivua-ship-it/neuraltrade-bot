@@ -15,25 +15,32 @@ log = logging.getLogger("NeuralTrade.ML")
 
 # ── Розширений список features ──────────────────────────────────
 FEATURES = [
-    # Технічні
+    # Технічні індикатори
     "rsi",          # RSI(14)
     "macd",         # MACD значення
     "bb_pct",       # Bollinger Band %
-    "atr_pct",      # ATR / price  (волатильність в %)
+    "atr_pct",      # ATR / price (волатильність в %)
     "volume_ratio", # Volume / MA20 Volume
     "ma_dist",      # (price - MA20) / MA20
     "ma50_dist",    # (price - MA50) / MA50
-    "vol_std",      # Realized volatility (rolling std)
+    "vol_std",      # Realized volatility
+    "adx",          # ADX (сила тренду)
     # Цінові рухи
-    "ret1",         # Доходність останньої свічки
-    "ret3",         # Доходність за 3 свічки
-    "ret5",         # Доходність за 5 свічок
+    "ret1",         # Доходність 1 свічки
+    "ret3",         # Доходність 3 свічки
+    "ret5",         # Доходність 5 свічок
     # Сентимент
     "fear_greed",   # Fear & Greed Index
-    "funding_rate", # Binance Funding Rate
+    "funding_rate", # Funding Rate
     "sent_score",   # Зведений сентимент
     # Час
     "hour_of_day",  # Час доби (0-23)
+    # Order Book + CVD (нові!)
+    "obi",          # Order Book Imbalance (0..1)
+    "cvd",          # Cumulative Volume Delta (-1..1)
+    "spread_pct",   # Bid-Ask spread %
+    # Мультитаймфреймний сигнал (новий!)
+    "mtf_score",    # Комбінований сигнал 5m+15m
 ]
 
 try:
@@ -316,11 +323,12 @@ class MLEngine:
             t.get("rsi")          or 50,
             t.get("macd")         or 0,
             t.get("bb_pct")       or 0.5,
-            (atr / price * 100)   if price > 0 else 0,   # atr_pct
+            (atr / price * 100)   if price > 0 else 0,
             t.get("volume_ratio") or 1,
             t.get("ma_dist")      or 0,
-            t.get("ma50_dist")    or (t.get("ma50_dist") or 0),
+            t.get("ma50_dist")    or 0,
             t.get("vol_std")      or 1,
+            t.get("adx")          or 20,          # ADX
             t.get("ret1")         or 0,
             t.get("ret3")         or 0,
             t.get("ret5")         or 0,
@@ -328,6 +336,10 @@ class MLEngine:
             t.get("funding_rate") or 0,
             t.get("sent_score")   or 0,
             t.get("hour_of_day")  or 12,
+            t.get("obi")          or 0.5,         # Order Book Imbalance
+            t.get("cvd")          or 0,           # Cumulative Volume Delta
+            t.get("spread_pct")   or 0,           # Bid-Ask спред
+            t.get("mtf_score")    or 0,           # MTF 5m+15m score
         ]
 
     @staticmethod

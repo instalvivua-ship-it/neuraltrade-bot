@@ -163,13 +163,28 @@ def key_info():
 
 @app.get("/api/stats")
 def get_stats(_auth=Depends(verify_api_key)):
-    return {**db.get_stats(), "balance": executor.get_balance(),
-            "mode": cfg.mode, "paused": tg.is_paused}
+    stats = db.get_stats()
+    open_t = db.get_open_trades()
+    return {
+        **stats,
+        "balance":     executor.get_balance(),
+        "mode":        cfg.mode,
+        "paused":      tg.is_paused,
+        "open_trades": open_t,
+        "open_count":  len(open_t),
+        "ml_samples":  db.conn.execute("SELECT COUNT(*) FROM trades").fetchone()[0],
+    }
 
 
 @app.get("/api/trades")
-def get_trades(limit: int = 100, pair: str = None, _auth=Depends(verify_api_key)):
+def get_trades(limit: int = 1000, pair: str = None, _auth=Depends(verify_api_key)):
+    """Повертає всі угоди (default limit=1000)."""
     return db.get_trades(limit=limit, pair=pair)
+
+@app.get("/api/trades/all")
+def get_all_trades(_auth=Depends(verify_api_key)):
+    """Повертає абсолютно всі угоди без ліміту."""
+    return db.get_trades(limit=99999)
 
 
 @app.get("/api/metrics")
@@ -294,7 +309,7 @@ async def ws_endpoint(ws: WebSocket):
         "mode":    cfg.mode,
         "paused":  tg.is_paused,
         "config":  cfg.to_dict(),
-        "trades":  db.get_trades(limit=50),
+        "trades":  db.get_trades(limit=1000),  # Всі угоди
         "regimes": _current_regimes,
         "metrics": {p: ml.get_metrics(p) for p in cfg.pairs},
         "ml_stats": {

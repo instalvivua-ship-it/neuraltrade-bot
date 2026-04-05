@@ -618,7 +618,10 @@ function connectWS() {
       g('serverBar').style.display = 'none';
       addLog('ok', 'Python сервер підключено!');
       showToast('✅ Сервер підключено');
-      setTimeout(fetchTrades, 800);
+      // Одразу завантажуємо свіжі дані з сервера
+      setTimeout(function() {
+        loadAllFromServer();
+      }, 800);
       // Завантажити угоди при підключенні
       setTimeout(fetchTrades, 1000);
     };
@@ -651,6 +654,13 @@ function connectWS() {
 function handleServerMsg(msg) {
   switch(msg.type) {
     case 'init':
+      // Встановлюємо початковий баланс якщо ще не встановлено
+      if (msg.balance && msg.balance > 0) {
+        var savedS2 = JSON.parse(localStorage.getItem('nt_stats') || 'null');
+        if (!savedS2 || !savedS2.sBal) {
+          sBal = msg.balance; // Перший запуск — зберігаємо стартовий баланс
+        }
+      }
       updateStats(msg);
       if (msg.trades)  renderTrades(msg.trades);
       if (msg.mode)    updateModeUI(msg.mode);
@@ -786,6 +796,85 @@ function handleServerMsg(msg) {
       addLog(msg.level || 'info', msg.message);
       break;
   }
+}
+
+// ════════════════════════════════════════════════════════════
+//  ЗАВАНТАЖЕННЯ ВСІХ ДАНИХ З СЕРВЕРА
+// ════════════════════════════════════════════════════════════
+
+async function loadAllFromServer() {
+  var rawUrl = (g('serverUrl') && g('serverUrl').value) ? g('serverUrl').value : (localStorage.getItem('nt_server_url') || '');
+  var apiUrl = rawUrl.replace('wss://','https://').replace('ws://','http://').replace('/ws','');
+  if (!apiUrl) return;
+  var apiKey = localStorage.getItem('neuraltrade_api_key') || localStorage.getItem('nt_api_key') || '';
+
+  addLog('info', '📥 Завантаження всіх даних з сервера...');
+
+  // Паралельно завантажуємо stats і всі угоди
+  try {
+    var [statsRes, tradesRes] = await Promise.all([
+      fetch(apiUrl + '/api/stats',      {headers: {'X-API-Key': apiKey}}),
+      fetch(apiUrl + '/api/trades/all', {headers: {'X-API-Key': apiKey}}),
+    ]);
+
+    // Stats
+    if (statsRes.ok) {
+      var statsData = await statsRes.json();
+      // Встановлюємо початковий баланс якщо не збережено
+      var savedS = JSON.parse(localStorage.getItem('nt_stats') || 'null');
+      if (!savedS || !savedS.sBal) {
+        var initBal = parseFloat(statsData.balance || 1000);
+        sBal = initBal;
+      }
+      updateStats(statsData);
+      addLog('ok', '📊 Stats: баланс=$' + fmt(statsData.balance || 0) +
+             ' угод=' + (statsData.total || 0) +
+             ' WR=' + (statsData.winrate || 0) + '%');
+    }
+
+    // Всі угоди
+    if (tradesRes.ok) {
+      var allTrades = await tradesRes.json();
+      if (Array.isArray(allTrades) && allTrades.length > 0) {
+        renderTrades(allTrades);
+        // Оновити ML зразки
+        mlTradesN = allTrades.length;
+        updateMLStats();
+        // Додати маркери угод на графік
+        allTrades.forEach(function(t) {
+          if (t.pair === curPair && t.entry_price) {
+            mkrs.push({
+              i:     Math.max(0, hist.length - 1),
+              s:     t.side || 'BUY',
+              price: t.entry_price,
+            });
+          }
+        });
+        if (mkrs.length > 20) mkrs = mkrs.slice(-20);
+        draw();
+        addLog('ok', '📋 Завантажено ' + allTrades.length + ' угод');
+        // Зберігаємо в localStorage
+        try { localStorage.setItem('nt_trades_cache', JSON.stringify(allTrades.slice(0, 500))); } catch(e) {}
+      }
+    }
+  } catch(e) {
+    addLog('warn', '⚠️ Не вдалось завантажити дані: ' + e.message);
+    // Fallback — завантажуємо з кешу
+    restoreFromCache();
+  }
+}
+
+function restoreFromCache() {
+  // Відновлюємо угоди з localStorage кешу
+  try {
+    var cached = JSON.parse(localStorage.getItem('nt_trades_cache') || 'null');
+    if (cached && cached.length > 0) {
+      renderTrades(cached);
+      mlTradesN = cached.length;
+      updateMLStats();
+      addLog('ok', '💾 Відновлено ' + cached.length + ' угод з кешу браузера');
+    }
+  } catch(e) {}
 }
 
 async function fetchTrades() {
@@ -1516,6 +1605,21 @@ function updateStats(data) {
 
   // ── Оновити баланс глобально ──────────────────────────────────
   if (bal > 0) balance = bal;
+
+  // ── Зберігаємо в localStorage після кожного оновлення ──────────
+  try {
+    localStorage.setItem('nt_stats', JSON.stringify({
+      balance:   bal,
+      sBal:      sBal,
+      total:     total,
+      winrate:   wr,
+      net_pnl:   net,
+      gross_pnl: gross,
+      fees:      fees,
+      open_count: openCount,
+      ts:        Date.now(),
+    }));
+  } catch(e) {}
 }
 
 function localUpdateStats() {
@@ -1544,6 +1648,16 @@ function updateMLStats() {
       g('mlStatus').textContent = 'Готовий до навчання';
     }
   }
+  // Зберігаємо ML прогрес
+  try {
+    localStorage.setItem('nt_ml', JSON.stringify({
+      tradesN:  mlTradesN,
+      target:   mlTarget,
+      accuracy: mlAccuracy,
+      winProb:  mlLastWinProb,
+      ts:       Date.now(),
+    }));
+  } catch(e) {}
 }
 
 function updateModeUI(mode) {
@@ -1850,15 +1964,66 @@ addLog('warn','Для старту: pip install -r requirements.txt && python se
   if (savedKey && g('apiKeyInput')) g('apiKeyInput').value = savedKey;
   if (s.tg_token)  addLog('ok', '✅ Telegram налаштовано');
   if (s.api_key)   addLog('ok', '✅ Binance API збережено');
+
+  // ── Відновлюємо збережену статистику ─────────────────────────
+  try {
+    var savedStats = JSON.parse(localStorage.getItem('nt_stats') || 'null');
+    if (savedStats && savedStats.ts && (Date.now() - savedStats.ts) < 86400000) {
+      balance = savedStats.balance || 1000;
+      sBal    = savedStats.sBal    || savedStats.balance || 1000;
+      updateStats({
+        balance:    savedStats.balance,
+        total:      savedStats.total      || 0,
+        winrate:    savedStats.winrate    || 0,
+        net_pnl:    savedStats.net_pnl    || 0,
+        gross_pnl:  savedStats.gross_pnl  || 0,
+        fees:       savedStats.fees       || 0,
+        open_count: savedStats.open_count || 0,
+        open_trades: [],
+      });
+      addLog('ok', '💾 Статистика відновлена: $' + fmt(savedStats.balance || 0) +
+             ' | угод=' + (savedStats.total || 0));
+    }
+  } catch(e) {}
+
+  // ── Відновлюємо угоди з кешу одразу (до підключення) ──────────
+  try {
+    var cachedTrades = JSON.parse(localStorage.getItem('nt_trades_cache') || 'null');
+    if (cachedTrades && cachedTrades.length > 0) {
+      renderTrades(cachedTrades);
+      addLog('ok', '💾 ' + cachedTrades.length + ' угод з кешу (оновляться після підключення)');
+    }
+  } catch(e) {}
+
+  // ── Відновлюємо ML прогрес ────────────────────────────────────
+  try {
+    var savedML = JSON.parse(localStorage.getItem('nt_ml') || 'null');
+    if (savedML) {
+      mlTradesN    = savedML.tradesN  || 0;
+      mlTarget     = savedML.target   || 100;
+      mlAccuracy   = savedML.accuracy || null;
+      mlLastWinProb= savedML.winProb  || null;
+      updateMLStats();
+      if (mlTradesN > 0) {
+        addLog('ok', '🧠 ML прогрес відновлено: ' + mlTradesN + '/' + mlTarget);
+      }
+    }
+  } catch(e) {}
+
   if (savedUrl && savedKey) setTimeout(connectWS, 1000);
 
-// ── Keep-alive: пінгує сервер кожні 4 хв щоб Railway не засинав ─
+// ── Keep-alive: пінгує сервер кожні 3 хв ──────────────────────
 setInterval(function() {
   var rawUrl = localStorage.getItem('nt_server_url') || '';
   if (!rawUrl) return;
   var apiUrl = rawUrl.replace('wss://','https://').replace('ws://','http://').replace('/ws','');
   fetch(apiUrl + '/health').catch(function(){});
-}, 240000);
+}, 180000);
+
+// ── Авто-синхронізація кожні 2 хв коли сервер підключений ──────
+setInterval(function() {
+  if (serverMode) loadAllFromServer();
+}, 120000);
 })();
 </script>
 </body>

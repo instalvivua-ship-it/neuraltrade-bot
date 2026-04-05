@@ -1,51 +1,43 @@
 {
-  "api_key":    "",
+  "api_key": "",
   "api_secret": "",
-  "testnet":    false,
-  "mode":       "demo",
-
-  "pairs":     ["BTC/USDT", "ETH/USDT", "SOL/USDT"],
-  "timeframe": "5m",
-  "cycle_interval_minutes": 5,
-
-  "min_confidence":    0.62,
-  "max_open_trades":   3,
-  "max_drawdown_pct":  0.10,
-  "max_loss_streak":   5,
+  "testnet": false,
+  "mode": "demo",
+  "pairs": [
+    "BTC/USDT",
+    "ETH/USDT",
+    "SOL/USDT"
+  ],
+  "timeframe": "1h",
+  "cycle_interval_minutes": 3,
+  "min_confidence": 0.52,
+  "max_open_trades": 5,
+  "max_drawdown_pct": 0.1,
+  "max_loss_streak": 5,
   "block_correlated_pairs": false,
-
   "position_sizing_method": "atr",
-  "position_size_pct":   0.05,
-  "risk_per_trade_pct":  0.01,
-  "max_position_pct":    0.15,
-
-  "atr_sl_multiplier":  1.5,
-  "atr_tp_multiplier":  3.0,
-
-  "trailing_stop_enabled":        true,
+  "position_size_pct": 0.05,
+  "risk_per_trade_pct": 0.02,
+  "max_position_pct": 0.15,
+  "atr_sl_multiplier": 2.0,
+  "atr_tp_multiplier": 4.0,
+  "trailing_stop_enabled": true,
   "trailing_stop_activation_pct": 0.03,
-  "trailing_stop_trail_pct":      0.01,
-
-  "volatility_pause_multiplier":  2.5,
-
+  "trailing_stop_trail_pct": 0.01,
+  "volatility_pause_multiplier": 2.5,
   "fee_rate": 0.001,
-  "use_bnb":  false,
+  "use_bnb": false,
   "max_slippage_pct": 0.005,
-
-  "retrain_every_hours":   24,
-  "min_trades_for_train":  100,
-
-  "use_llm":           false,
-  "openai_api_key":    "",
+  "retrain_every_hours": 24,
+  "min_trades_for_train": 100,
+  "use_llm": false,
+  "openai_api_key": "",
   "anthropic_api_key": "",
-
-  "telegram_token":    "",
-  "telegram_chat_id":  "",
+  "telegram_token": "",
+  "telegram_chat_id": "",
   "telegram_backup_db": true,
-
   "server_host": "0.0.0.0",
   "server_port": 8000,
-
   "initial_demo_balance": 1000.0,
   "db_path": "neuraltrade.db"
 }
