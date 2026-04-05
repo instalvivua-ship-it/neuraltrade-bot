@@ -82,6 +82,11 @@ def _load_or_create_api_key() -> str:
     key = secrets.token_urlsafe(32)
     with open(_API_KEY_FILE, "w") as f:
         f.write(key)
+    try:
+        import os as _os
+        _os.chmod(_API_KEY_FILE, 0o600)
+    except Exception:
+        pass
     log.info(f"🔑 Новий API ключ → {_API_KEY_FILE}")
     log.info(f"🔑 API KEY: {key}")
     return key
