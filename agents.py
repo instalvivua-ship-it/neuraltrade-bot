@@ -76,6 +76,8 @@ class TechAnalystAgent:
         self.cfg       = cfg
         self._exchange = None
         self._price_cache: Dict[str, Tuple[float, float]] = {}  # pair → (price, ts)
+        self._ohlcv_cache: Dict[str, tuple] = {}   # pair → (df, timestamp)
+        self._ohlcv_ttl   = 300                     # 5 хв TTL
         self._init_exchange()
 
     def _init_exchange(self):
@@ -146,14 +148,21 @@ class TechAnalystAgent:
         self._price_cache[pair] = (p, time.time())
         return p
 
-    def fetch_ohlcv(self, pair: str, limit: int = 200) -> Optional["pd.DataFrame"]:
+    def fetch_ohlcv(self, pair: str, limit: int = 200, force: bool = False) -> Optional["pd.DataFrame"]:
         """
         Завантажує свічки через:
-        1. Bybit REST API (не блокується)
-        2. Симуляція як fallback
+        1. Кеш (TTL=5 хв) — щоб не смикати API кожні 30 сек
+        2. Bybit REST API (не блокується)
+        3. Симуляція як fallback
         """
         if not HAS_TA:
             return None
+
+        # ── Кеш ──────────────────────────────────────────────
+        if not force and pair in self._ohlcv_cache:
+            df, ts = self._ohlcv_cache[pair]
+            if time.time() - ts < self._ohlcv_ttl:
+                return df
 
         # ── Bybit klines (публічний, не блокується) ───────────
         try:
@@ -183,11 +192,15 @@ class TechAnalystAgent:
                     df = df.dropna()
                     if len(df) >= 50:
                         log.debug(f"Bybit OHLCV {pair}: {len(df)} свічок")
+                        self._ohlcv_cache[pair] = (df, time.time())
                         return df
         except Exception as e:
             log.debug(f"Bybit OHLCV {pair}: {e}")
 
-        return self._simulate_ohlcv(pair, limit)
+        df_sim = self._simulate_ohlcv(pair, limit)
+        if df_sim is not None:
+            self._ohlcv_cache[pair] = (df_sim, time.time())
+        return df_sim
 
     def _simulate_ohlcv(self, pair: str, limit: int) -> "pd.DataFrame":
         import random

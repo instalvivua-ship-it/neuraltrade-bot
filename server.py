@@ -334,12 +334,11 @@ async def _broadcaster():
 # ════════════════════════════════════════════════════════════════
 
 def run_trading_cycle():
-    log.info(f"▶️  run_trading_cycle() called | paused={tg.is_paused} | pairs={cfg.pairs}")
     if tg.is_paused:
-        log.info("⏸ Торгівля на паузі")
+        _queue_msg({"type":"agent_log","level":"warn",
+                    "message":"⏸ Торгівля на паузі (Telegram /pause)"})
         return
 
-    log.info(f"🔄 Цикл {datetime.now().strftime('%H:%M:%S')} починається...")
     _queue_msg({"type":"cycle_start",
                 "message": f"Цикл {datetime.now().strftime('%H:%M:%S')}"})
 
@@ -370,8 +369,70 @@ def run_trading_cycle():
                         "drawdown": dd, "balance": bal})
 
 
+# ════════════════════════════════════════════════════════════════
+#  ⚡ ШВИДКИЙ ЦИКЛ — кожні 30 сек (ціни + SL/TP + агент-статус)
+# ════════════════════════════════════════════════════════════════
+
+_last_prices: dict = {}       # пара → остання ціна
+_price_move_threshold = 0.004  # 0.4% руху → повний аналіз
+
+def run_fast_cycle():
+    """
+    Легкий цикл кожні 30 сек:
+    - Оновлює ціни через Bybit/CoinGecko
+    - Транслює prices на дашборд
+    - Перевіряє SL/TP відкритих угод
+    - Якщо ціна рухається > 0.4% → запускає повний аналіз
+    """
+    if tg.is_paused:
+        return
+
+    prices = {}
+    trigger_full = False
+
+    for pair in cfg.pairs:
+        try:
+            price = tech.get_current_price(pair)
+            if price and price > 0:
+                prices[pair] = round(price, 4)
+
+                # Перевіряємо чи ціна рухається суттєво
+                prev = _last_prices.get(pair, price)
+                move = abs(price - prev) / prev if prev > 0 else 0
+                if move > _price_move_threshold:
+                    trigger_full = True
+                    log.info(f"⚡ {pair}: рух ціни {move*100:.2f}% → повний аналіз")
+                _last_prices[pair] = price
+        except Exception:
+            pass
+
+    if prices:
+        _queue_msg({"type": "prices", "prices": prices})
+
+    # Перевірка SL/TP кожні 30 сек
+    try:
+        executor.check_open_trades()
+        open_t = db.get_open_trades()
+        if open_t:
+            _queue_msg({
+                "type": "stats_update",
+                **db.get_stats(),
+                "balance": executor.get_balance(),
+                "open_trades": open_t,
+                "paused": tg.is_paused,
+            })
+    except Exception as e:
+        log.debug(f"fast_cycle check_trades: {e}")
+
+    # Якщо великий рух — запускаємо повний аналіз
+    if trigger_full:
+        try:
+            run_trading_cycle()
+        except Exception as e:
+            log.error(f"trigger_full error: {e}")
+
+
 def _run_pair(pair: str):
-    log.info(f"🔍 _run_pair({pair}) started")
     _queue_msg({"type":"agent_log","level":"info",
                 "message":f"🔍 Аналіз {pair}..."})
 
@@ -567,29 +628,35 @@ async def startup():
 
 
 def _scheduler():
-    import schedule
-    import traceback
+    import schedule, traceback
 
     log.info("🕐 Scheduler thread запущено")
 
-    interval = cfg.cycle_interval_minutes or 60
+    interval = cfg.cycle_interval_minutes or 5
+
+    # Повний аналіз (RSI/MACD/ML/Debate) — кожні N хвилин
     schedule.every(interval).minutes.do(run_trading_cycle)
+
+    # ⚡ Швидкий цикл — ціни + SL/TP кожні 30 секунд
+    schedule.every(30).seconds.do(run_fast_cycle)
+
+    # ML навчання кожні 24 год
     schedule.every(cfg.retrain_every_hours or 24).hours.do(
         lambda: [ml.train(p) for p in cfg.pairs]
     )
     schedule.every().day.at("09:00").do(
         lambda: tg.daily_report(db.get_stats())
     )
-    schedule.every(30).minutes.do(
+    schedule.every(10).minutes.do(
         lambda: db.save_balance(executor.get_balance(), cfg.mode)
     )
-    # Щоденний бекап
     if cfg.telegram_backup_db:
         schedule.every().day.at("03:00").do(
             lambda: tg.daily_backup(db.path)
         )
 
-    time.sleep(5)
+    # Перший запуск через 3 сек
+    time.sleep(3)
     log.info("🚀 Перший цикл запускається...")
     try:
         run_trading_cycle()
@@ -598,8 +665,11 @@ def _scheduler():
         log.error(traceback.format_exc())
 
     while True:
-        schedule.run_pending()
-        time.sleep(15)
+        try:
+            schedule.run_pending()
+        except Exception as e:
+            log.error(f"Scheduler error: {e}")
+        time.sleep(5)
 
 
 if __name__ == "__main__":
