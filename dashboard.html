@@ -359,7 +359,7 @@ tr.nr{animation:ra .5s ease}
     <div class="p">
       <div class="sl" style="font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--mut);letter-spacing:3px;margin-bottom:5px">ML НАВЧАННЯ</div>
       <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--mut);line-height:1.8">
-        <div>Зразків: <span style="color:var(--acc)" id="mlN">0/30</span></div>
+        <div>Зразків: <span style="color:var(--acc)" id="mlN">0/100</span></div>
         <div>Точність: <span style="color:var(--grn)" id="mlAcc">—</span></div>
         <div>Статус: <span style="color:var(--yel)" id="mlStatus">Збір даних...</span></div>
       </div>
@@ -567,6 +567,7 @@ const PRICES = {
 };
 let curPair = 'BTC/USDT';
 let curTF = '1h';
+let mlTarget = 100; // читається з конфігу сервера
 let balance = 1000, sBal = 1000;
 let grossPnl = 0, totalFees = 0, wins = 0, loss = 0;
 let trades = [], hist = [], mkrs = [], logs = [];
@@ -634,6 +635,10 @@ function handleServerMsg(msg) {
       updateStats(msg);
       if (msg.trades) renderTrades(msg.trades);
       if (msg.mode) updateModeUI(msg.mode);
+      // Читаємо mlTarget з конфігу сервера
+      if (msg.config && msg.config.min_trades_for_train) {
+        mlTarget = msg.config.min_trades_for_train;
+      }
       break;
 
     case 'prices':
@@ -1048,12 +1053,12 @@ function localUpdateStats() {
 }
 
 function updateMLStats() {
-  const pct = Math.min(100, mlTradesN/30*100);
-  g('mlN').textContent = `${mlTradesN}/30`;
+  const pct = Math.min(100, mlTradesN/mlTarget*100);
+  g('mlN').textContent = `${mlTradesN}/${mlTarget}`;
   g('mlBar').style.width = pct+'%';
   g('mlAcc').textContent = mlAccuracy ? (mlAccuracy*100).toFixed(1)+'%' : '—';
-  g('mlStatus').textContent = mlTradesN < 30
-    ? `Збір даних (ще ${30-mlTradesN})`
+  g('mlStatus').textContent = mlTradesN < mlTarget
+    ? `Збір даних (ще ${mlTarget-mlTradesN})`
     : mlAccuracy ? 'Модель активна' : 'Готовий до навчання';
 }
 
