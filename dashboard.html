@@ -140,6 +140,11 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 .ptabs::-webkit-scrollbar{display:none}
 .ptab{padding:4px 11px;border-radius:5px;font-family:'Share Tech Mono',monospace;font-size:11px;cursor:pointer;border:1px solid var(--brd);color:var(--mut);transition:all .2s;white-space:nowrap;flex-shrink:0}
 .ptab.on{background:rgba(0,255,231,.07);border-color:var(--acc);color:var(--acc)}
+.tftab{padding:3px 8px;border-radius:4px;font-family:'Share Tech Mono',monospace;font-size:10px;cursor:pointer;border:1px solid var(--brd);color:var(--mut);transition:all .2s;white-space:nowrap;flex-shrink:0}
+.tftab.on{background:rgba(245,197,24,.08);border-color:var(--yel);color:var(--yel)}
+.tftabs{display:flex;gap:3px;margin-bottom:6px;overflow-x:auto;scrollbar-width:none}
+.tftabs::-webkit-scrollbar{display:none}
+.loading-bar{height:2px;background:var(--acc);border-radius:1px;width:0%;transition:width .3s;margin-top:2px}
 .prow{display:flex;align-items:flex-end;gap:10px;margin-bottom:6px;flex-wrap:wrap}
 .cprice{font-family:'Space Mono',monospace;font-size:26px;color:#fff;line-height:1;transition:color .3s}
 @media(min-width:600px){.cprice{font-size:32px}}
@@ -400,9 +405,18 @@ tr.nr{animation:ra .5s ease}
         <div class="ptab" onclick="selPair('SOL/USDT',this)">SOL/USDT</div>
         <div class="ptab" onclick="selPair('BNB/USDT',this)">BNB/USDT</div>
       </div>
+      <div class="tftabs">
+        <div class="tftab" onclick="selTF('1m',this)">1m</div>
+        <div class="tftab" onclick="selTF('5m',this)">5m</div>
+        <div class="tftab" onclick="selTF('15m',this)">15m</div>
+        <div class="tftab on" onclick="selTF('1h',this)">1h</div>
+        <div class="tftab" onclick="selTF('4h',this)">4h</div>
+        <div class="tftab" onclick="selTF('1d',this)">1D</div>
+      </div>
       <div class="prow">
         <div class="cprice" id="cPrice">$84,210.00</div>
         <div class="pchg up" id="pChg">▲ +1.24%</div>
+        <div id="loadingBar" class="loading-bar"></div>
       </div>
       <canvas id="ch"></canvas>
     </div>
@@ -552,6 +566,7 @@ const PRICES = {
   'SOL/USDT':{p:148.5,b:148.5},'BNB/USDT':{p:592,b:592}
 };
 let curPair = 'BTC/USDT';
+let curTF = '1h';
 let balance = 1000, sBal = 1000;
 let grossPnl = 0, totalFees = 0, wins = 0, loss = 0;
 let trades = [], hist = [], mkrs = [], logs = [];
@@ -1215,12 +1230,59 @@ function setConnState(state, label) {
 // ════════════════════════════════════════════════════════════
 //  PAIR SELECT + MOBILE
 // ════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════
+//  TIMEFRAME — завантаження свічок з Binance
+// ════════════════════════════════════════════════════════════
+
+async function fetchKlines(pair, tf, limit = 100) {
+  const sym = pair.replace('/', '');
+  const bar = document.getElementById('loadingBar');
+  if (bar) { bar.style.width = '30%'; bar.style.background = 'var(--acc)'; }
+  try {
+    const r = await fetch(
+      `https://api.binance.com/api/v3/klines?symbol=${sym}&interval=${tf}&limit=${limit}`,
+      { signal: AbortSignal.timeout(8000) }
+    );
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    if (bar) bar.style.width = '80%';
+    // Беремо ціни закриття свічок
+    const closes = data.map(k => parseFloat(k[4]));
+    if (closes.length > 0) {
+      hist = closes;
+      mkrs = mkrs.filter(m => m.i >= 0 && m.i < hist.length);
+      if (bar) { bar.style.width = '100%'; setTimeout(()=>{ bar.style.width='0%'; }, 500); }
+      draw();
+      addLog('ok', `📊 ${pair} ${tf}: ${closes.length} свічок завантажено`);
+      return true;
+    }
+  } catch(e) {
+    addLog('warn', `Klines ${pair} ${tf}: ${e.message}`);
+    if (bar) { bar.style.width = '0%'; bar.style.background = 'var(--red)'; }
+  }
+  return false;
+}
+
+function selTF(tf, el) {
+  curTF = tf;
+  document.querySelectorAll('.tftab').forEach(t => t.classList.remove('on'));
+  el.classList.add('on');
+  hist = []; mkrs = [];
+  draw();
+  fetchKlines(curPair, tf).then(ok => {
+    if (!ok) initHist();
+  });
+  addLog('info', `Таймфрейм: ${tf}`);
+}
+
 function selPair(pair, el) {
   curPair = pair;
   document.querySelectorAll('.ptab').forEach(t=>t.classList.remove('on'));
   el.classList.add('on');
   hist = []; mkrs = [];
   draw();
+  // Завантажуємо свічки для поточного таймфрейму
+  fetchKlines(pair, curTF).then(ok => { if (!ok) initHist(); });
   // Перепідключаємо Binance WS для нової пари
   startBinanceWS(pair);
   addLog('info', `Переключено: ${pair}`);
@@ -1242,7 +1304,9 @@ function showTab(tab, btn) {
 setInterval(()=>{g('ht').textContent=new Date().toLocaleTimeString('uk');},1000);
 setInterval(localTick, 900);
 
-initHist(); rsz(); draw();
+rsz(); initHist(); draw();
+// Завантажуємо реальні свічки з Binance
+fetchKlines(curPair, curTF).then(ok => { if (!ok) initHist(); });
 // Одразу підключаємо Binance WS для реальних цін
 startBinanceWS(curPair);
 if(window.innerWidth<=900) showTab('chart',document.querySelector('.nb'));
