@@ -46,6 +46,6 @@
   "server_host": "0.0.0.0",
   "server_port": 8000,
 
-  "initial_demo_balance": 100.0,
+  "initial_demo_balance": 1000.0,
   "db_path": "neuraltrade.db"
 }
