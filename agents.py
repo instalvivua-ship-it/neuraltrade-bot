@@ -79,45 +79,44 @@ class TechAnalystAgent:
         self._init_exchange()
 
     def _init_exchange(self):
-        if not HAS_CCXT:
-            return
-        try:
-            params = {
-                "apiKey": self.cfg.api_key,
-                "secret": self.cfg.api_secret,
-                "enableRateLimit": True,
-                "options": {"defaultType": "spot"},
-            }
-            if self.cfg.testnet:
-                params["urls"] = {"api": {
-                    "public":  "https://testnet.binance.vision/api",
-                    "private": "https://testnet.binance.vision/api",
-                }}
-            self._exchange = ccxt.binance(params)
-            log.info(f"✅ Binance {'Testnet' if self.cfg.testnet else 'LIVE'}")
-        except Exception as e:
-            log.error(f"Binance init: {e}")
+        # ccxt повністю вимкнено — Railway блокує Binance (451)
+        # Ціни: CoinGecko + Bybit (не блокуються)
+        # OHLCV: Bybit public API
+        self._exchange = None
+        log.info("✅ Ціни: CoinGecko + Bybit API (Railway-compatible)")
 
     def get_current_price(self, pair: str) -> Optional[float]:
+        """
+        Отримує ціну через:
+        1. Bybit REST API (публічний, не блокується)
+        2. CoinGecko API (резервний)
+        3. Симуляція (останній варіант)
+        """
         # Кеш 5 секунд
         if pair in self._price_cache:
             p, ts = self._price_cache[pair]
             if time.time() - ts < 5:
                 return p
-        # Binance публічний REST (без API ключів)
+
+        # ── Bybit публічний REST (не блокується з Railway) ────
         try:
             sym = pair.replace("/", "")
             r = requests.get(
-                f"https://api.binance.com/api/v3/ticker/price?symbol={sym}",
+                f"https://api.bybit.com/v5/market/tickers"
+                f"?category=spot&symbol={sym}",
                 timeout=5
             )
             if r.status_code == 200:
-                p = float(r.json()["price"])
-                self._price_cache[pair] = (p, time.time())
-                return p
+                data = r.json()
+                items = data.get("result", {}).get("list", [])
+                if items:
+                    p = float(items[0]["lastPrice"])
+                    self._price_cache[pair] = (p, time.time())
+                    return p
         except Exception:
             pass
-        # Fallback — CoinGecko (якщо Binance заблокований)
+
+        # ── CoinGecko резервний ────────────────────────────────
         try:
             sym_map = {
                 "BTC/USDT": "bitcoin", "ETH/USDT": "ethereum",
@@ -136,35 +135,59 @@ class TechAnalystAgent:
                     return p
         except Exception:
             pass
-        # Fallback ccxt
-        if self._exchange:
-            try:
-                t = self._exchange.fetch_ticker(pair)
-                p = float(t["last"])
-                self._price_cache[pair] = (p, time.time())
-                return p
-            except Exception as e:
-                log.error(f"Ціна {pair}: {e}")
-        # Резервна симуляція з реальними цінами
+
+        # ── Симуляція (якщо все заблоковано) ──────────────────
         import random
-        base = {"BTC/USDT":67000,"ETH/USDT":3200,"SOL/USDT":148,"BNB/USDT":590}.get(pair, 100)
+        base = {
+            "BTC/USDT": 67000, "ETH/USDT": 3200,
+            "SOL/USDT": 148,   "BNB/USDT": 590
+        }.get(pair, 100)
         p = base * (1 + random.gauss(0, 0.001))
         self._price_cache[pair] = (p, time.time())
         return p
 
     def fetch_ohlcv(self, pair: str, limit: int = 200) -> Optional["pd.DataFrame"]:
-        if self._exchange and HAS_TA:
-            try:
-                tf = self.TF_MAP.get(self.cfg.timeframe, "1h")
-                raw = self._exchange.fetch_ohlcv(pair, tf, limit=limit)
-                df = pd.DataFrame(raw, columns=["ts","open","high","low","close","volume"])
-                df["ts"] = pd.to_datetime(df["ts"], unit="ms")
-                return df
-            except Exception as e:
-                log.error(f"OHLCV {pair}: {e}")
-        if HAS_TA:
-            return self._simulate_ohlcv(pair, limit)
-        return None
+        """
+        Завантажує свічки через:
+        1. Bybit REST API (не блокується)
+        2. Симуляція як fallback
+        """
+        if not HAS_TA:
+            return None
+
+        # ── Bybit klines (публічний, не блокується) ───────────
+        try:
+            sym = pair.replace("/", "")
+            tf_map = {
+                "1m": "1",  "5m": "5",  "15m": "15",
+                "1h": "60", "4h": "240","1d": "D"
+            }
+            interval = tf_map.get(self.cfg.timeframe or "1h", "60")
+            r = requests.get(
+                f"https://api.bybit.com/v5/market/kline"
+                f"?category=spot&symbol={sym}&interval={interval}&limit={limit}",
+                timeout=10
+            )
+            if r.status_code == 200:
+                data = r.json()
+                items = data.get("result", {}).get("list", [])
+                if items and len(items) >= 50:
+                    # Bybit повертає в зворотному порядку
+                    items = list(reversed(items))
+                    df = pd.DataFrame(items, columns=[
+                        "ts", "open", "high", "low", "close", "volume", "turnover"
+                    ])
+                    for col in ["open","high","low","close","volume"]:
+                        df[col] = pd.to_numeric(df[col], errors="coerce")
+                    df["ts"] = pd.to_datetime(df["ts"].astype(int), unit="ms")
+                    df = df.dropna()
+                    if len(df) >= 50:
+                        log.debug(f"Bybit OHLCV {pair}: {len(df)} свічок")
+                        return df
+        except Exception as e:
+            log.debug(f"Bybit OHLCV {pair}: {e}")
+
+        return self._simulate_ohlcv(pair, limit)
 
     def _simulate_ohlcv(self, pair: str, limit: int) -> "pd.DataFrame":
         import random
@@ -439,15 +462,21 @@ class SentimentAgent:
         return self._fg_val
 
     def _get_funding(self, pair: str) -> float:
+        # Bybit funding rate (Binance заблокований)
         try:
             sym = pair.replace("/", "")
             r = requests.get(
-                f"https://fapi.binance.com/fapi/v1/premiumIndex?symbol={sym}",
+                f"https://api.bybit.com/v5/market/tickers"
+                f"?category=linear&symbol={sym}",
                 timeout=8
             )
-            return float(r.json().get("lastFundingRate", 0))
+            if r.status_code == 200:
+                items = r.json().get("result", {}).get("list", [])
+                if items:
+                    return float(items[0].get("fundingRate", 0))
         except Exception:
-            return 0.0
+            pass
+        return 0.0
 
     def _llm_once_per_hour(self, pair: str, price: float) -> float:
         """LLM кеш 1 год — не витрачаємо API на кожен трейд."""
@@ -852,10 +881,11 @@ class ExecutorAgent:
                 "secret":          self.cfg.api_secret,
                 "enableRateLimit": True,
             }
+            # Bybit testnet якщо потрібно
             if self.cfg.testnet:
                 params["urls"] = {"api": {
-                    "public":  "https://testnet.binance.vision/api",
-                    "private": "https://testnet.binance.vision/api",
+                    "public":  "https://api-testnet.bybit.com",
+                    "private": "https://api-testnet.bybit.com",
                 }}
             self._exchange = ccxt.binance(params)
             log.info("✅ Executor: Binance підключено")
@@ -1099,5 +1129,5 @@ class ExecutorAgent:
                 except Exception:
                     time.sleep(1)
         import random
-        base = {"BTC/USDT":84000,"ETH/USDT":3200,"SOL/USDT":148,"BNB/USDT":590}.get(pair,100)
+        base = {"BTC/USDT":67000,"ETH/USDT":3200,"SOL/USDT":148,"BNB/USDT":590}.get(pair,100)
         return base * (1 + random.gauss(0, 0.003))
