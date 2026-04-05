@@ -669,7 +669,8 @@ const PRICES = {
 };
 let curPair = 'BTC/USDT';
 let curTF   = '1h';
-let mlTarget = 100;
+let mlTarget = 100; // буде оновлено з сервера (виправлення: скидаємо хибне значення)
+try{var _mtf=JSON.parse(localStorage.getItem('nt_ml')||'null');if(_mtf&&(_mtf.target>100||_mtf.target<10)){_mtf.target=100;localStorage.setItem('nt_ml',JSON.stringify(_mtf));}}catch(e){}
 let chartView = {offset: 0, count: 100}; // zoom/scroll стан
 let crosshair = {x: -1, y: -1};          // позиція кросхера // читається з конфігу сервера
 let balance = 1000, sBal = 1000;
@@ -709,6 +710,8 @@ function connectWS() {
       // Одразу завантажуємо свіжі дані з сервера
       setTimeout(function() {
         loadAllFromServer();
+        // Форсуємо оновлення індикаторів з останніх сигналів
+        loadLastSignals();
       }, 800);
       // Завантажити угоди при підключенні
       setTimeout(fetchTrades, 1000);
@@ -890,6 +893,29 @@ function handleServerMsg(msg) {
 //  ЗАВАНТАЖЕННЯ ВСІХ ДАНИХ З СЕРВЕРА
 // ════════════════════════════════════════════════════════════
 
+async function loadLastSignals() {
+  // Завантажує останні технічні сигнали щоб показати RSI/MACD одразу
+  try {
+    var rawUrl = (g('serverUrl') && g('serverUrl').value) || localStorage.getItem('nt_server_url') || '';
+    var apiUrl = rawUrl.replace('wss://','https://').replace('ws://','http://').replace('/ws','');
+    var apiKey = localStorage.getItem('neuraltrade_api_key') || localStorage.getItem('nt_api_key') || '';
+    if (!apiUrl || !apiKey) return;
+    var r = await fetch(apiUrl + '/api/signals', {headers: {'X-API-Key': apiKey}});
+    if (!r.ok) return;
+    var signals = await r.json();
+    if (!Array.isArray(signals) || !signals.length) return;
+    // Беремо останній сигнал для поточної пари
+    var last = signals.find(function(s){ return s.pair === curPair; }) || signals[0];
+    if (last) {
+      if (last.rsi !== undefined)  updateIndicator('rsi',  parseFloat(last.rsi).toFixed(1),  sigClass(last.rsi, 35, 65));
+      if (last.macd !== undefined) updateIndicator('macd', (last.macd>0?'+':'')+parseFloat(last.macd).toFixed(0), last.macd>0?'bull':'bear');
+      if (last.bb_pct !== undefined) updateIndicator('bb', (last.bb_pct*100).toFixed(0)+'%', last.bb_pct<0.2?'bull':last.bb_pct>0.8?'bear':'neut');
+      if (last.fear_greed !== undefined) updateIndicator('fg', parseFloat(last.fear_greed).toFixed(0), fgClass(last.fear_greed));
+      addLog('ok', '📊 Індикатори відновлено: RSI=' + parseFloat(last.rsi||50).toFixed(1));
+    }
+  } catch(e) {}
+}
+
 async function loadAllFromServer() {
   var rawUrl = (g('serverUrl') && g('serverUrl').value) ? g('serverUrl').value : (localStorage.getItem('nt_server_url') || '');
   var apiUrl = rawUrl.replace('wss://','https://').replace('ws://','http://').replace('/ws','');
@@ -900,9 +926,15 @@ async function loadAllFromServer() {
 
   // Паралельно завантажуємо stats і всі угоди
   try {
+    // Пробуємо /api/trades/all (новий endpoint), якщо нема — /api/trades
+    var tradesUrl = apiUrl + '/api/trades/all';
+    var h = {'X-API-Key': apiKey};
     var [statsRes, tradesRes] = await Promise.all([
-      fetch(apiUrl + '/api/stats',      {headers: {'X-API-Key': apiKey}}),
-      fetch(apiUrl + '/api/trades/all', {headers: {'X-API-Key': apiKey}}),
+      fetch(apiUrl + '/api/stats', {headers: h}),
+      fetch(tradesUrl, {headers: h}).then(function(r) {
+        if (!r.ok) return fetch(apiUrl + '/api/trades?limit=1000', {headers: h});
+        return r;
+      }),
     ]);
 
     // Stats
@@ -943,6 +975,32 @@ async function loadAllFromServer() {
         addLog('ok', '📋 Завантажено ' + allTrades.length + ' угод');
         // Зберігаємо в localStorage
         try { localStorage.setItem('nt_trades_cache', JSON.stringify(allTrades.slice(0, 500))); } catch(e) {}
+        // Одразу перераховуємо stats з реальних даних
+        var closed2 = allTrades.filter(function(t){ return t.status && t.status !== 'OPEN'; });
+        var open2   = allTrades.filter(function(t){ return !t.status || t.status === 'OPEN'; });
+        var fees2   = allTrades.reduce(function(s,t){ return s + parseFloat(t.fee_usd||0); }, 0);
+        var gross2  = closed2.reduce(function(s,t){ return s + parseFloat(t.gross_pnl||0); }, 0);
+        var wins2   = closed2.filter(function(t){ return parseFloat(t.net_pnl||0) > 0; }).length;
+        var livePnl2 = open2.reduce(function(s,t) {
+          var ep = parseFloat(t.entry_price||0); var amt = parseFloat(t.amount_usd||0);
+          var cp = PRICES[t.pair] ? PRICES[t.pair].p : ep;
+          var side = (t.side||'').toLowerCase();
+          if (!ep||!amt) return s;
+          return s + (side==='buy' ? (cp-ep)/ep*amt : (ep-cp)/ep*amt);
+        }, 0);
+        updateStats({
+          total:       closed2.length,
+          winrate:     closed2.length ? Math.round(wins2/closed2.length*100) : 0,
+          gross_pnl:   gross2 + livePnl2,
+          fees:        fees2,
+          net_pnl:     gross2 + livePnl2 - fees2,
+          balance:     balance,
+          open_trades: open2,
+          open_count:  open2.length,
+        });
+        // ML samples = всі угоди
+        mlTradesN = allTrades.length;
+        updateMLStats();
       }
     }
   } catch(e) {
@@ -1769,11 +1827,24 @@ function updateStats(data) {
   var net   = parseFloat(data.net_pnl   || 0);
   var fees  = parseFloat(data.fees      || 0);
   // Додаємо комісії відкритих угод якщо є
+  // Live PnL + комісії від ВІДКРИТИХ угод
+  var liveNet = 0;
   if (Array.isArray(data.open_trades) && data.open_trades.length > 0) {
-    var openFees = data.open_trades.reduce(function(s,t){ return s+parseFloat(t.fee_usd||0); }, 0);
-    fees = fees + openFees;
+    data.open_trades.forEach(function(t) {
+      var ep   = parseFloat(t.entry_price || 0);
+      var amt  = parseFloat(t.amount_usd  || 0);
+      var fee  = parseFloat(t.fee_usd     || 0);
+      var side = (t.side || '').toLowerCase();
+      var cp   = (PRICES[t.pair] && PRICES[t.pair].p) ? PRICES[t.pair].p : ep;
+      fees += fee;
+      if (ep > 0 && amt > 0) {
+        liveNet += side === 'buy' ? (cp-ep)/ep*amt : (ep-cp)/ep*amt;
+      }
+    });
+    net   = net + liveNet - data.open_trades.reduce(function(s,t){return s+parseFloat(t.fee_usd||0);},0);
+    gross = gross + liveNet;
   }
-  var gross = parseFloat(data.gross_pnl || 0);
+  if (!gross) gross = parseFloat(data.gross_pnl || 0);
   var bal   = parseFloat(data.balance   || balance || 1000);
   // Рахуємо ВСІ угоди: закриті + відкриті
   var closedCount = parseInt(data.total || 0);
