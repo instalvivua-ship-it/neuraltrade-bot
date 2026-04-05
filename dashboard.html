@@ -1,0 +1,1176 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>NeuralTrade AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#020608;--panel:#060d10;--brd:#0d2a30;
+  --acc:#00ffe7;--grn:#00ff88;--red:#ff3e6c;--yel:#f5c518;
+  --txt:#c8e8ee;--mut:#3a6670;
+}
+html,body{width:100%;height:100%;background:var(--bg);color:var(--txt);font-family:'Rajdhani',sans-serif;overflow:hidden}
+body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,255,231,.012) 2px,rgba(0,255,231,.012) 4px);pointer-events:none;z-index:900}
+#app{display:flex;flex-direction:column;width:100vw;height:100vh;overflow:hidden}
+
+/* HEADER */
+header{flex-shrink:0;display:flex;align-items:center;justify-content:space-between;padding:0 14px;height:50px;border-bottom:1px solid var(--brd);background:rgba(6,13,16,.97);z-index:50;gap:8px;flex-wrap:wrap}
+.logo{display:flex;align-items:center;gap:8px}
+.logo-hex{width:28px;height:28px;border:1.5px solid var(--acc);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:15px;color:var(--acc);box-shadow:0 0 10px rgba(0,255,231,.25)}
+.logo-text{font-family:'Space Mono',monospace;font-size:13px;color:var(--acc);letter-spacing:2px;text-shadow:0 0 15px rgba(0,255,231,.4)}
+.hright{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.conn-pill{display:flex;align-items:center;gap:5px;border-radius:20px;padding:4px 10px;font-family:'Share Tech Mono',monospace;font-size:10px;border:1px solid}
+.conn-pill.ok{background:rgba(0,255,136,.07);border-color:rgba(0,255,136,.2);color:var(--grn)}
+.conn-pill.err{background:rgba(255,62,108,.07);border-color:rgba(255,62,108,.2);color:var(--red)}
+.conn-pill.wait{background:rgba(245,197,24,.07);border-color:rgba(245,197,24,.2);color:var(--yel)}
+.dot{width:6px;height:6px;border-radius:50%;animation:blink 1.4s infinite}
+.dot.g{background:var(--grn);box-shadow:0 0 6px var(--grn)}
+.dot.r{background:var(--red)}
+.dot.y{background:var(--yel);box-shadow:0 0 5px var(--yel)}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.htime{font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--mut)}
+.hbtn{background:rgba(0,255,231,.06);border:1px solid rgba(0,255,231,.15);color:var(--acc);border-radius:7px;padding:4px 9px;font-family:'Share Tech Mono',monospace;font-size:10px;cursor:pointer;transition:all .2s;white-space:nowrap}
+.hbtn:hover{background:rgba(0,255,231,.14)}
+.hbtn.g{background:rgba(0,255,136,.06);border-color:rgba(0,255,136,.2);color:var(--grn)}
+.hbtn.r{background:rgba(255,62,108,.06);border-color:rgba(255,62,108,.2);color:var(--red)}
+.hbtn.y{background:rgba(245,197,24,.06);border-color:rgba(245,197,24,.2);color:var(--yel)}
+.mode-badge{border-radius:20px;padding:3px 10px;font-family:'Share Tech Mono',monospace;font-size:10px;letter-spacing:1px;cursor:pointer;border:1px solid}
+.mode-badge.demo{background:rgba(245,197,24,.08);border-color:rgba(245,197,24,.3);color:var(--yel)}
+.mode-badge.live{background:rgba(0,255,136,.08);border-color:rgba(0,255,136,.3);color:var(--grn)}
+
+/* SERVER INPUT */
+#serverBar{flex-shrink:0;background:rgba(6,13,16,.95);border-bottom:1px solid var(--brd);padding:7px 14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+#serverBar label{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--mut);white-space:nowrap}
+#serverUrl{background:rgba(0,0,0,.5);border:1px solid var(--brd);border-radius:6px;padding:5px 10px;font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--txt);width:220px}
+#serverUrl:focus{outline:none;border-color:rgba(0,255,231,.4)}
+
+/* SETTINGS MODAL */
+#settingsModal{display:none;position:fixed;inset:0;z-index:800;align-items:center;justify-content:center;background:rgba(0,0,0,.78);backdrop-filter:blur(4px)}
+#settingsModal.open{display:flex}
+.mbox{background:var(--panel);border:1px solid var(--brd);border-radius:14px;width:min(460px,94vw);max-height:90vh;overflow-y:auto;box-shadow:0 0 40px rgba(0,255,231,.07)}
+.mbox::-webkit-scrollbar{width:3px}
+.mbox::-webkit-scrollbar-thumb{background:var(--brd)}
+.mhead{display:flex;align-items:center;justify-content:space-between;padding:15px 18px 12px;border-bottom:1px solid var(--brd)}
+.mtitle{font-family:'Space Mono',monospace;font-size:13px;color:var(--acc);letter-spacing:2px}
+.mclose{background:none;border:none;color:var(--mut);font-size:20px;cursor:pointer}
+.msec{padding:13px 18px;border-bottom:1px solid var(--brd)}
+.msec:last-child{border-bottom:none;padding-bottom:18px}
+.stitle{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--mut);letter-spacing:3px;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.stitle::before{content:'';width:3px;height:10px;background:var(--acc);border-radius:2px}
+.inp{width:100%;background:rgba(0,0,0,.4);border:1px solid var(--brd);border-radius:7px;padding:7px 10px;font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--txt);margin-bottom:8px;transition:border-color .2s}
+.inp:focus{outline:none;border-color:rgba(0,255,231,.4)}
+.inp::placeholder{color:var(--mut)}
+.inplbl{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--mut);letter-spacing:2px;margin-bottom:4px}
+.sw-row{display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid rgba(13,42,48,.5)}
+.sw-row:last-child{border-bottom:none}
+.sw{position:relative;width:42px;height:22px;flex-shrink:0}
+.sw input{opacity:0;width:0;height:0}
+.sw-s{position:absolute;cursor:pointer;inset:0;background:rgba(13,42,48,1);border:1px solid var(--brd);border-radius:22px;transition:.3s}
+.sw-s::before{content:'';position:absolute;width:16px;height:16px;left:2px;bottom:2px;background:var(--mut);border-radius:50%;transition:.3s}
+.sw input:checked+.sw-s{background:rgba(0,255,231,.12);border-color:var(--acc)}
+.sw input:checked+.sw-s::before{background:var(--acc);transform:translateX(20px);box-shadow:0 0 6px var(--acc)}
+.sbtn{padding:7px 14px;border-radius:7px;font-family:'Share Tech Mono',monospace;font-size:11px;font-weight:700;cursor:pointer;border:none;transition:all .2s}
+.sbtn.acc{background:rgba(0,255,231,.1);border:1px solid rgba(0,255,231,.3);color:var(--acc)}
+.sbtn.grn{background:rgba(0,255,136,.1);border:1px solid rgba(0,255,136,.3);color:var(--grn)}
+.sbtn.red{background:rgba(255,62,108,.1);border:1px solid rgba(255,62,108,.3);color:var(--red)}
+.sbtn.yel{background:rgba(245,197,24,.1);border:1px solid rgba(245,197,24,.3);color:var(--yel)}
+.sbtn:hover{opacity:.8}
+.brow{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
+.sbox{padding:9px 11px;border-radius:8px;font-family:'Share Tech Mono',monospace;font-size:10px;line-height:1.6;margin-top:8px}
+.sbox.ok{background:rgba(0,255,136,.06);border:1px solid rgba(0,255,136,.2);color:var(--grn)}
+.sbox.warn{background:rgba(245,197,24,.06);border:1px solid rgba(245,197,24,.2);color:var(--yel)}
+.sbox.info{background:rgba(0,255,231,.04);border:1px solid rgba(0,255,231,.15);color:var(--acc)}
+select.inp{cursor:pointer}
+select.inp option{background:#060d10}
+input[type=range]{width:100%;accent-color:var(--acc)}
+
+/* LAYOUT */
+#body{flex:1;display:flex;overflow:hidden}
+.cl,.cr{width:215px;flex-shrink:0;display:flex;flex-direction:column;border-right:1px solid var(--brd);overflow-y:auto}
+.cl::-webkit-scrollbar,.cr::-webkit-scrollbar{width:2px}
+.cl::-webkit-scrollbar-thumb,.cr::-webkit-scrollbar-thumb{background:var(--brd)}
+.cr{border-right:none;border-left:1px solid var(--brd)}
+.cc{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+@media(max-width:900px){.cl,.cr{display:none}}
+#mnav{display:none;position:fixed;bottom:0;left:0;right:0;height:54px;background:rgba(6,13,16,.97);border-top:1px solid var(--brd);z-index:100;flex-direction:row;align-items:center;justify-content:space-around}
+@media(max-width:900px){#mnav{display:flex}#app{padding-bottom:54px}}
+.nb{display:flex;flex-direction:column;align-items:center;gap:2px;color:var(--mut);font-family:'Share Tech Mono',monospace;font-size:9px;cursor:pointer;padding:5px 12px;border-radius:8px;transition:all .2s}
+.nb.on{color:var(--acc);background:rgba(0,255,231,.06)}
+.ni{font-size:17px}
+.mp{display:none;flex:1;overflow-y:auto;flex-direction:column}
+.mp::-webkit-scrollbar{width:2px}
+.mp::-webkit-scrollbar-thumb{background:var(--brd)}
+@media(max-width:900px){.mp.vis{display:flex}.cc{display:none}.cc.vis{display:flex}}
+
+/* PANELS */
+.p{background:var(--panel);padding:12px 14px;border-bottom:1px solid var(--brd)}
+.pt{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--mut);letter-spacing:3px;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.pt::before{content:'';width:3px;height:10px;background:var(--acc);border-radius:2px;box-shadow:0 0 5px var(--acc)}
+.bl{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--mut);letter-spacing:3px;margin-bottom:3px}
+.bv{font-family:'Space Mono',monospace;font-size:26px;color:#fff}
+.bv span{font-size:13px;color:var(--acc);margin-right:2px}
+.bc{margin-top:4px;font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--grn)}
+.bc.neg{color:var(--red)}
+.sg{display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:10px 12px;background:var(--panel);border-bottom:1px solid var(--brd)}
+.si{background:rgba(0,255,231,.02);border:1px solid var(--brd);border-radius:7px;padding:9px;transition:background .3s}
+.si:hover{background:rgba(0,255,231,.04)}
+.sl{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--mut);letter-spacing:2px;margin-bottom:2px}
+.sv{font-family:'Space Mono',monospace;font-size:17px;transition:color .3s}
+.sv.g{color:var(--grn)}.sv.r{color:var(--red)}.sv.a{color:var(--acc)}.sv.y{color:var(--yel)}
+
+/* AGENTS */
+.ag{display:flex;align-items:center;gap:7px;padding:8px;border-radius:7px;border:1px solid rgba(13,42,48,.8);margin-bottom:6px;transition:all .3s}
+.ag.on{border-color:rgba(0,255,231,.25);background:rgba(0,255,231,.03)}
+.ag.thinking{border-color:rgba(245,197,24,.25);background:rgba(245,197,24,.03)}
+.ag.active{border-color:rgba(0,255,136,.25);background:rgba(0,255,136,.03)}
+.ai{width:26px;height:26px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}
+.an{font-size:12px;font-weight:600}
+.as{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--mut);margin-top:1px;transition:all .2s}
+.ad{width:6px;height:6px;border-radius:50%;flex-shrink:0;transition:all .3s}
+.ad.t{background:var(--yel);animation:blink 1s infinite;box-shadow:0 0 4px var(--yel)}
+.ad.a{background:var(--grn);animation:blink 2s infinite;box-shadow:0 0 4px var(--grn)}
+.ad.i{background:var(--mut)}
+
+/* CHART */
+.cw{flex-shrink:0;background:var(--panel);padding:10px 14px 0}
+.ptabs{display:flex;gap:3px;margin-bottom:8px;overflow-x:auto;scrollbar-width:none}
+.ptabs::-webkit-scrollbar{display:none}
+.ptab{padding:4px 11px;border-radius:5px;font-family:'Share Tech Mono',monospace;font-size:11px;cursor:pointer;border:1px solid var(--brd);color:var(--mut);transition:all .2s;white-space:nowrap;flex-shrink:0}
+.ptab.on{background:rgba(0,255,231,.07);border-color:var(--acc);color:var(--acc)}
+.prow{display:flex;align-items:flex-end;gap:10px;margin-bottom:6px;flex-wrap:wrap}
+.cprice{font-family:'Space Mono',monospace;font-size:26px;color:#fff;line-height:1;transition:color .3s}
+@media(min-width:600px){.cprice{font-size:32px}}
+.pchg{font-family:'Share Tech Mono',monospace;font-size:12px;padding:3px 8px;border-radius:5px;margin-bottom:2px}
+.pchg.up{background:rgba(0,255,136,.1);color:var(--grn);border:1px solid rgba(0,255,136,.2)}
+.pchg.dn{background:rgba(255,62,108,.1);color:var(--red);border:1px solid rgba(255,62,108,.2)}
+canvas#ch{width:100%;height:150px;display:block}
+@media(min-width:600px){canvas#ch{height:190px}}
+
+/* SIGNAL BAR */
+.sigbar{background:var(--panel);border-top:1px solid var(--brd);border-bottom:1px solid var(--brd);padding:7px 14px;display:flex;align-items:center;gap:7px;overflow-x:auto;scrollbar-width:none;flex-shrink:0}
+.sigbar::-webkit-scrollbar{display:none}
+.sc{display:flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;font-family:'Share Tech Mono',monospace;font-size:10px;white-space:nowrap;border:1px solid;flex-shrink:0;transition:all .4s}
+.sc.b{background:rgba(0,255,136,.07);border-color:rgba(0,255,136,.25);color:var(--grn)}
+.sc.s{background:rgba(255,62,108,.07);border-color:rgba(255,62,108,.25);color:var(--red)}
+.sc.n{background:rgba(245,197,24,.07);border-color:rgba(245,197,24,.25);color:var(--yel)}
+
+/* TRADES */
+.tw{flex:1;overflow-y:auto;background:var(--panel)}
+.tw::-webkit-scrollbar{width:3px}
+.tw::-webkit-scrollbar-thumb{background:var(--brd)}
+table{width:100%;border-collapse:collapse}
+th{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--mut);letter-spacing:2px;padding:9px 7px;text-align:left;border-bottom:1px solid var(--brd);position:sticky;top:0;background:var(--panel);z-index:1}
+td{padding:8px 7px;border-bottom:1px solid rgba(13,42,48,.4);font-family:'Share Tech Mono',monospace;font-size:10px}
+tr.nr{animation:ra .5s ease}
+@keyframes ra{from{opacity:0;background:rgba(0,255,231,.06)}to{opacity:1;background:transparent}}
+.badge{display:inline-block;padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700}
+.badge.buy{background:rgba(0,255,136,.12);color:var(--grn);border:1px solid rgba(0,255,136,.25)}
+.badge.sell{background:rgba(255,62,108,.12);color:var(--red);border:1px solid rgba(255,62,108,.25)}
+.badge.open{background:rgba(0,255,231,.1);color:var(--acc);border:1px solid rgba(0,255,231,.25)}
+.badge.tp{background:rgba(0,255,136,.08);color:var(--grn);border:1px solid rgba(0,255,136,.2)}
+.badge.sl{background:rgba(255,62,108,.08);color:var(--red);border:1px solid rgba(255,62,108,.2)}
+.badge.demo{background:rgba(245,197,24,.08);color:var(--yel);border:1px solid rgba(245,197,24,.2);font-size:8px}
+.badge.live2{background:rgba(0,255,136,.06);color:var(--grn);border:1px solid rgba(0,255,136,.15);font-size:8px}
+.pg{color:var(--grn)}.prr{color:var(--red)}.py{color:var(--yel)}
+
+/* DECISION */
+.db2{border:1px solid var(--brd);border-radius:9px;padding:11px;transition:all .4s}
+.db2.buy{border-color:rgba(0,255,136,.3);background:rgba(0,255,136,.03)}
+.db2.sell{border-color:rgba(255,62,108,.3);background:rgba(255,62,108,.03)}
+.db2.hold{border-color:rgba(245,197,24,.3);background:rgba(245,197,24,.03)}
+.da{font-family:'Space Mono',monospace;font-size:22px;font-weight:700;transition:all .3s}
+.da.buy{color:var(--grn)}.da.sell{color:var(--red)}.da.hold{color:var(--yel)}
+.dr{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--mut);line-height:1.5;margin-top:6px}
+.cbar{height:3px;background:var(--brd);border-radius:2px;margin-top:3px}
+.cfill{height:100%;border-radius:2px;transition:width .8s}
+.vote-row{display:flex;gap:6px;margin-top:8px}
+.vote{flex:1;text-align:center;padding:4px;border-radius:5px;font-family:'Share Tech Mono',monospace;font-size:10px}
+.vote.bull{background:rgba(0,255,136,.08);color:var(--grn);border:1px solid rgba(0,255,136,.2)}
+.vote.bear{background:rgba(255,62,108,.08);color:var(--red);border:1px solid rgba(255,62,108,.2)}
+
+/* INDICATORS */
+.ir{display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(13,42,48,.5)}
+.ir:last-child{border-bottom:none}
+.in2{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--mut)}
+.iv{font-family:'Space Mono',monospace;font-size:11px;transition:color .3s}
+.is{font-family:'Share Tech Mono',monospace;font-size:9px;padding:2px 6px;border-radius:4px;transition:all .3s}
+.is.bull{background:rgba(0,255,136,.1);color:var(--grn)}.is.bear{background:rgba(255,62,108,.1);color:var(--red)}.is.neut{background:rgba(245,197,24,.1);color:var(--yel)}
+
+/* LOG */
+.lw{flex:1;overflow-y:auto;font-family:'Share Tech Mono',monospace;font-size:10px;min-height:80px}
+.lw::-webkit-scrollbar{width:2px}
+.lw::-webkit-scrollbar-thumb{background:var(--brd)}
+.le{padding:3px 0;border-bottom:1px solid rgba(13,42,48,.3);display:flex;gap:6px;animation:la .3s ease}
+@keyframes la{from{opacity:0;transform:translateY(-3px)}to{opacity:1}}
+.lt{color:var(--mut);flex-shrink:0}
+.lm.info{color:var(--acc)}.lm.ok{color:var(--grn)}.lm.warn{color:var(--yel)}.lm.err{color:var(--red)}
+
+/* BOTTOM BAR */
+.bbar{flex-shrink:0;background:var(--panel);border-top:1px solid var(--brd);padding:7px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.bs{display:flex;gap:14px;overflow-x:auto}
+.bsi{text-align:center;flex-shrink:0}
+.bsl{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--mut);display:block}
+.bsv{font-family:'Space Mono',monospace;font-size:12px}
+
+/* ML PROG */
+.ml-bar{height:3px;background:var(--brd);border-radius:2px;margin-top:5px}
+.ml-fill{height:100%;background:var(--acc);border-radius:2px;transition:width .5s}
+
+/* TOAST */
+#toast{position:fixed;bottom:66px;left:50%;transform:translateX(-50%);background:rgba(0,255,231,.12);border:1px solid rgba(0,255,231,.3);color:var(--acc);font-family:'Share Tech Mono',monospace;font-size:11px;padding:7px 14px;border-radius:8px;z-index:1000;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap}
+#toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div id="app">
+
+<!-- HEADER -->
+<header>
+  <div class="logo">
+    <div class="logo-hex">⬡</div>
+    <div><div class="logo-text">NEURALTRADE AI</div></div>
+  </div>
+  <div class="hright">
+    <div class="conn-pill wait" id="connPill"><div class="dot y" id="connDot"></div><span id="connLabel">ПІДКЛЮЧЕННЯ...</span></div>
+    <div class="htime" id="ht">--:--:--</div>
+    <div class="mode-badge demo" id="modeBadge" onclick="toggleMode()">◆ DEMO</div>
+    <button class="hbtn y" onclick="triggerRetrain()">🧠 ML</button>
+    <button class="hbtn g" onclick="exportCSV()">↓ CSV</button>
+    <button class="hbtn" onclick="openSettings()">⚙</button>
+  </div>
+</header>
+
+<!-- SERVER BAR -->
+<div id="serverBar">
+  <label>🖥 Сервер:</label>
+  <input id="serverUrl" value="" placeholder="wss://...railway.app/ws" style="width:260px">
+  <input id="apiKeyInput" type="password" placeholder="API Key" style="background:rgba(0,0,0,.5);border:1px solid var(--brd);border-radius:6px;padding:5px 10px;font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--txt);width:160px">
+  <button class="sbtn acc" onclick="connectWS()">ПІДКЛЮЧИТИ</button>
+  <button class="sbtn yel" onclick="runDemoMode()">DEMO</button>
+</div>
+
+<!-- SETTINGS MODAL -->
+<div id="settingsModal">
+  <div class="mbox">
+    <div class="mhead">
+      <div class="mtitle">⚙ НАЛАШТУВАННЯ</div>
+      <button class="mclose" onclick="closeSettings()">✕</button>
+    </div>
+
+    <div class="msec">
+      <div class="stitle">BINANCE API</div>
+      <div class="inplbl">API KEY</div>
+      <input class="inp" id="cfgKey" type="password" placeholder="Binance API Key...">
+      <div class="inplbl">API SECRET</div>
+      <input class="inp" id="cfgSec" type="password" placeholder="Binance API Secret...">
+      <div class="sw-row">
+        <div><div style="font-size:13px">Testnet</div><div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--mut)">testnet.binancefuture.com</div></div>
+        <label class="sw"><input type="checkbox" id="cfgTestnet" checked><span class="sw-s"></span></label>
+      </div>
+      <div class="brow">
+        <button class="sbtn grn" onclick="saveAPIConfig()">ЗБЕРЕГТИ API</button>
+      </div>
+    </div>
+
+    <div class="msec">
+      <div class="stitle">РЕЖИМ ТОРГІВЛІ</div>
+      <div class="sw-row">
+        <div><div style="font-size:13px">Demo режим</div><div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--mut)">Симуляція — реальні ціни, без реальних угод</div></div>
+        <label class="sw"><input type="checkbox" id="cfgDemo" checked onchange="onModeSwitch(this)"><span class="sw-s"></span></label>
+      </div>
+      <div class="sbox info" id="modeInfo">
+        ℹ️ Demo: реальні ціни Binance + симульований баланс $1000<br>
+        Підходить для тестування стратегії без ризику
+      </div>
+    </div>
+
+    <div class="msec">
+      <div class="stitle">ПАРАМЕТРИ РИЗИКУ</div>
+      <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--mut);display:flex;justify-content:space-between;margin-bottom:4px">
+        <span>Розмір позиції</span><span id="cfgPosLbl" style="color:var(--acc)">5%</span>
+      </div>
+      <input type="range" id="cfgPos" min="1" max="20" value="5" oninput="g('cfgPosLbl').textContent=this.value+'%'">
+      <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--mut);display:flex;justify-content:space-between;margin:8px 0 4px">
+        <span>Stop-Loss</span><span id="cfgSLLbl" style="color:var(--red)">2%</span>
+      </div>
+      <input type="range" id="cfgSL" min="0.5" max="10" step="0.5" value="2" oninput="g('cfgSLLbl').textContent=this.value+'%'">
+      <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--mut);display:flex;justify-content:space-between;margin:8px 0 4px">
+        <span>Take-Profit</span><span id="cfgTPLbl" style="color:var(--grn)">4%</span>
+      </div>
+      <input type="range" id="cfgTP" min="1" max="20" step="0.5" value="4" oninput="g('cfgTPLbl').textContent=this.value+'%'">
+      <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--mut);display:flex;justify-content:space-between;margin:8px 0 4px">
+        <span>Мін. впевненість AI</span><span id="cfgConfLbl" style="color:var(--acc)">62%</span>
+      </div>
+      <input type="range" id="cfgConf" min="50" max="90" value="62" oninput="g('cfgConfLbl').textContent=this.value+'%'">
+    </div>
+
+    <div class="msec">
+      <div class="stitle">AI / LLM (опціонально)</div>
+      <div class="sw-row">
+        <div><div style="font-size:13px">Використовувати LLM для сентименту</div><div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--mut)">OpenAI або Anthropic API</div></div>
+        <label class="sw"><input type="checkbox" id="cfgLLM"><span class="sw-s"></span></label>
+      </div>
+      <div class="inplbl" style="margin-top:8px">OPENAI API KEY</div>
+      <input class="inp" id="cfgOAI" type="password" placeholder="sk-...">
+    </div>
+
+    <div class="msec">
+      <div class="stitle">TELEGRAM</div>
+      <div class="inplbl">BOT TOKEN (@BotFather)</div>
+      <input class="inp" id="cfgTGToken" placeholder="1234567890:AAF...">
+      <div class="inplbl">CHAT ID (@userinfobot)</div>
+      <input class="inp" id="cfgTGChat" placeholder="123456789">
+    </div>
+
+    <div class="msec">
+      <div class="brow">
+        <button class="sbtn grn" onclick="sendConfigToServer()">💾 ЗБЕРЕГТИ НА СЕРВЕРІ</button>
+        <button class="sbtn acc" onclick="closeSettings()">ЗАКРИТИ</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- BODY -->
+<div id="body">
+
+  <!-- LEFT -->
+  <div class="cl">
+    <div class="p">
+      <div class="bl" id="balLabel">DEMO БАЛАНС</div>
+      <div class="bv"><span>$</span><span id="balVal">1000.00</span></div>
+      <div class="bc" id="balChg">+$0.00 (0.00%)</div>
+    </div>
+    <div class="sg">
+      <div class="si"><div class="sl">УГОД</div><div class="sv a" id="statTrades">0</div></div>
+      <div class="si"><div class="sl">WINRATE</div><div class="sv g" id="statWR">—</div></div>
+      <div class="si"><div class="sl">NET P&amp;L</div><div class="sv g" id="statNet">$0.00</div></div>
+      <div class="si"><div class="sl">КОМІСІЇ</div><div class="sv y" id="statFees">$0.00</div></div>
+    </div>
+    <!-- ML статус -->
+    <div class="p">
+      <div class="sl" style="font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--mut);letter-spacing:3px;margin-bottom:5px">ML НАВЧАННЯ</div>
+      <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--mut);line-height:1.8">
+        <div>Зразків: <span style="color:var(--acc)" id="mlN">0/30</span></div>
+        <div>Точність: <span style="color:var(--grn)" id="mlAcc">—</span></div>
+        <div>Статус: <span style="color:var(--yel)" id="mlStatus">Збір даних...</span></div>
+      </div>
+      <div class="ml-bar"><div class="ml-fill" id="mlBar" style="width:0%"></div></div>
+    </div>
+    <!-- AI Agents -->
+    <div class="p" style="flex:1">
+      <div class="pt">AI АГЕНТИ</div>
+      <div class="ag on" id="ag_tech">
+        <div class="ai" style="background:rgba(0,255,231,.07)">📊</div>
+        <div style="flex:1;min-width:0"><div class="an">Tech Analyst</div><div class="as" id="as_tech">Ожидание...</div></div>
+        <div class="ad t" id="ad_tech"></div>
+      </div>
+      <div class="ag" id="ag_sent">
+        <div class="ai" style="background:rgba(245,197,24,.07)">📰</div>
+        <div style="flex:1;min-width:0"><div class="an">Sentiment</div><div class="as" id="as_sent">Ожидание...</div></div>
+        <div class="ad i" id="ad_sent"></div>
+      </div>
+      <div class="ag" id="ag_risk">
+        <div class="ai" style="background:rgba(255,62,108,.07)">🛡️</div>
+        <div style="flex:1;min-width:0"><div class="an">Risk Manager</div><div class="as" id="as_risk">Мониторинг...</div></div>
+        <div class="ad a" id="ad_risk"></div>
+      </div>
+      <div class="ag" id="ag_exec">
+        <div class="ai" style="background:rgba(0,255,136,.07)">⚡</div>
+        <div style="flex:1;min-width:0"><div class="an">Executor</div><div class="as" id="as_exec">Готов</div></div>
+        <div class="ad i" id="ad_exec"></div>
+      </div>
+      <div class="ag" id="ag_debate">
+        <div class="ai" style="background:rgba(0,255,231,.04)">🤖</div>
+        <div style="flex:1;min-width:0"><div class="an">Debate AI</div><div class="as" id="as_debate">Bull vs Bear...</div></div>
+        <div class="ad t" id="ad_debate"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CENTER -->
+  <div class="cc" id="pChart">
+    <div class="cw">
+      <div class="ptabs" id="pairTabs">
+        <div class="ptab on" onclick="selPair('BTC/USDT',this)">BTC/USDT</div>
+        <div class="ptab" onclick="selPair('ETH/USDT',this)">ETH/USDT</div>
+        <div class="ptab" onclick="selPair('SOL/USDT',this)">SOL/USDT</div>
+        <div class="ptab" onclick="selPair('BNB/USDT',this)">BNB/USDT</div>
+      </div>
+      <div class="prow">
+        <div class="cprice" id="cPrice">$84,210.00</div>
+        <div class="pchg up" id="pChg">▲ +1.24%</div>
+      </div>
+      <canvas id="ch"></canvas>
+    </div>
+    <div class="sigbar" id="sigBar">
+      <div class="sc b" id="sig_ma">▲ MA Cross</div>
+      <div class="sc n" id="sig_rsi">◆ RSI 58.2</div>
+      <div class="sc b" id="sig_vol">▲ Volume ×1.8</div>
+      <div class="sc n" id="sig_bb">◆ BB 42%</div>
+      <div class="sc n" id="sig_fund">◆ Fund +0.01%</div>
+      <div class="sc n" id="sig_fg">◆ F&G 52</div>
+    </div>
+    <div class="p" style="flex-shrink:0"><div class="pt">УГОДИ</div></div>
+    <div class="tw">
+      <table>
+        <thead><tr>
+          <th>#</th><th>ЧАС</th><th>ПАРА</th><th>БІК</th>
+          <th>ЦІНА</th><th>FEE</th><th>NET P&L</th>
+          <th>СТАТ</th><th>РЕЖИМ</th>
+        </tr></thead>
+        <tbody id="tradesBody"></tbody>
+      </table>
+    </div>
+    <div class="bbar">
+      <div class="bs">
+        <div class="bsi"><span class="bsl">GROSS</span><span class="bsv pg" id="bGross">$0.00</span></div>
+        <div class="bsi"><span class="bsl">FEE</span><span class="bsv py" id="bFee">$0.00</span></div>
+        <div class="bsi"><span class="bsl">NET</span><span class="bsv pg" id="bNet">$0.00</span></div>
+        <div class="bsi"><span class="bsl">ВІДКРИТО</span><span class="bsv a" id="bOpen">0</span></div>
+      </div>
+      <div class="mode-badge demo" id="bottomBadge">◆ DEMO</div>
+    </div>
+  </div>
+
+  <!-- RIGHT -->
+  <div class="cr">
+    <div class="p">
+      <div class="pt">РІШЕННЯ AI</div>
+      <div class="db2 hold" id="decBox">
+        <div class="da hold" id="decAction">HOLD</div>
+        <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--mut)">
+          Впевненість: <span id="decConf">—</span>
+        </div>
+        <div class="dr" id="decReason">Очікування аналізу...</div>
+        <div class="vote-row">
+          <div class="vote bull" id="vBull">🐂 Bull: 0</div>
+          <div class="vote bear" id="vBear">🐻 Bear: 0</div>
+        </div>
+        <div style="font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--mut);margin-top:8px;display:flex;justify-content:space-between">
+          <span>CONFIDENCE</span><span id="confPct">—</span>
+        </div>
+        <div class="cbar"><div class="cfill" id="confFill" style="width:0%;background:var(--yel)"></div></div>
+      </div>
+    </div>
+    <div class="p">
+      <div class="pt">ІНДИКАТОРИ</div>
+      <div class="ir"><span class="in2">RSI(14)</span><span class="iv" id="i_rsi">—</span><span class="is neut" id="is_rsi">—</span></div>
+      <div class="ir"><span class="in2">MACD</span><span class="iv" id="i_macd">—</span><span class="is neut" id="is_macd">—</span></div>
+      <div class="ir"><span class="in2">MA(20)</span><span class="iv" id="i_ma20">—</span><span class="is neut" id="is_ma20">—</span></div>
+      <div class="ir"><span class="in2">BB %</span><span class="iv" id="i_bb">—</span><span class="is neut" id="is_bb">—</span></div>
+      <div class="ir"><span class="in2">F&amp;G Index</span><span class="iv" id="i_fg">—</span><span class="is neut" id="is_fg">—</span></div>
+      <div class="ir"><span class="in2">Funding</span><span class="iv" id="i_fund">—</span><span class="is neut" id="is_fund">—</span></div>
+      <div class="ir"><span class="in2">ML Win%</span><span class="iv" id="i_ml">—</span><span class="is neut" id="is_ml">—</span></div>
+    </div>
+    <div class="p" style="flex:1;display:flex;flex-direction:column">
+      <div class="pt">ЛОГ</div>
+      <div class="lw" id="logWin"></div>
+    </div>
+  </div>
+
+  <!-- MOBILE panels -->
+  <div class="mp" id="mpAgents">
+    <div class="p">
+      <div class="bl" id="mBalLabel">DEMO БАЛАНС</div>
+      <div class="bv"><span>$</span><span id="mBalVal">1000.00</span></div>
+      <div class="bc" id="mBalChg">+$0.00 (0.00%)</div>
+    </div>
+    <div class="sg">
+      <div class="si"><div class="sl">УГОД</div><div class="sv a" id="mStatT">0</div></div>
+      <div class="si"><div class="sl">WINRATE</div><div class="sv g" id="mStatW">—</div></div>
+      <div class="si"><div class="sl">NET P&L</div><div class="sv g" id="mStatN">$0.00</div></div>
+      <div class="si"><div class="sl">КОМІСІЇ</div><div class="sv y" id="mStatF">$0.00</div></div>
+    </div>
+    <div class="p">
+      <div class="pt">AI АГЕНТИ</div>
+      <div class="ag on" id="mag_tech"><div class="ai" style="background:rgba(0,255,231,.07)">📊</div><div style="flex:1;min-width:0"><div class="an">Tech Analyst</div><div class="as" id="mas_tech">Аналіз...</div></div><div class="ad t" id="mad_tech"></div></div>
+      <div class="ag" id="mag_sent"><div class="ai" style="background:rgba(245,197,24,.07)">📰</div><div style="flex:1;min-width:0"><div class="an">Sentiment</div><div class="as" id="mas_sent">Очікування...</div></div><div class="ad i" id="mad_sent"></div></div>
+      <div class="ag" id="mag_risk"><div class="ai" style="background:rgba(255,62,108,.07)">🛡️</div><div style="flex:1;min-width:0"><div class="an">Risk Manager</div><div class="as" id="mas_risk">Моніторинг...</div></div><div class="ad a" id="mad_risk"></div></div>
+      <div class="ag" id="mag_exec"><div class="ai" style="background:rgba(0,255,136,.07)">⚡</div><div style="flex:1;min-width:0"><div class="an">Executor</div><div class="as" id="mas_exec">Готовий</div></div><div class="ad i" id="mad_exec"></div></div>
+      <div class="ag" id="mag_debate"><div class="ai" style="background:rgba(0,255,231,.04)">🤖</div><div style="flex:1;min-width:0"><div class="an">Debate AI</div><div class="as" id="mas_debate">Bull vs Bear...</div></div><div class="ad t" id="mad_debate"></div></div>
+    </div>
+  </div>
+
+  <div class="mp" id="mpDecision">
+    <div class="p">
+      <div class="pt">РІШЕННЯ AI</div>
+      <div class="db2 hold" id="mdecBox">
+        <div class="da hold" id="mdecAction">HOLD</div>
+        <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--mut)">Впевненість: <span id="mdecConf">—</span></div>
+        <div class="dr" id="mdecReason">Очікування...</div>
+        <div class="vote-row">
+          <div class="vote bull" id="mvBull">🐂 Bull: 0</div>
+          <div class="vote bear" id="mvBear">🐻 Bear: 0</div>
+        </div>
+        <div class="cbar" style="margin-top:8px"><div class="cfill" id="mconfFill" style="width:0%;background:var(--yel)"></div></div>
+      </div>
+    </div>
+    <div class="p">
+      <div class="pt">ІНДИКАТОРИ</div>
+      <div class="ir"><span class="in2">RSI(14)</span><span class="iv" id="mi_rsi">—</span><span class="is neut" id="mis_rsi">—</span></div>
+      <div class="ir"><span class="in2">MACD</span><span class="iv" id="mi_macd">—</span><span class="is neut" id="mis_macd">—</span></div>
+      <div class="ir"><span class="in2">BB %</span><span class="iv" id="mi_bb">—</span><span class="is neut" id="mis_bb">—</span></div>
+      <div class="ir"><span class="in2">F&amp;G</span><span class="iv" id="mi_fg">—</span><span class="is neut" id="mis_fg">—</span></div>
+      <div class="ir"><span class="in2">ML Win%</span><span class="iv" id="mi_ml">—</span><span class="is neut" id="mis_ml">—</span></div>
+    </div>
+    <div class="p" style="flex:1;display:flex;flex-direction:column">
+      <div class="pt">ЛОГ</div>
+      <div class="lw" id="mLogWin"></div>
+    </div>
+  </div>
+
+</div><!-- /body -->
+
+<div id="mnav">
+  <div class="nb on" onclick="showTab('chart',this)"><div class="ni">📈</div>ГРАФІК</div>
+  <div class="nb" onclick="showTab('agents',this)"><div class="ni">🤖</div>АГЕНТИ</div>
+  <div class="nb" onclick="showTab('decision',this)"><div class="ni">🎯</div>РІШЕННЯ</div>
+  <div class="nb" onclick="openSettings()"><div class="ni">⚙️</div>API</div>
+</div>
+
+<div id="toast"></div>
+</div><!-- /app -->
+
+<script>
+// ════════════════════════════════════════════════════════════
+//  GLOBALS
+// ════════════════════════════════════════════════════════════
+const g = id => document.getElementById(id);
+const fmt = (n, d=2) => Number(n).toLocaleString('en',{minimumFractionDigits:d,maximumFractionDigits:d});
+
+let wsConn = null;
+let serverMode = false;   // true = підключено до Python сервера
+let demoMode   = true;    // true = demo, false = live
+
+// Локальний стан (для demo без сервера)
+const PRICES = {
+  'BTC/USDT':{p:84210,b:84210},'ETH/USDT':{p:3285,b:3285},
+  'SOL/USDT':{p:148.5,b:148.5},'BNB/USDT':{p:592,b:592}
+};
+let curPair = 'BTC/USDT';
+let balance = 1000, sBal = 1000;
+let grossPnl = 0, totalFees = 0, wins = 0, loss = 0;
+let trades = [], hist = [], mkrs = [], logs = [];
+let tradeId = 0, mlTradesN = 0, mlAccuracy = null;
+
+// ════════════════════════════════════════════════════════════
+//  WEBSOCKET — ПІДКЛЮЧЕННЯ ДО PYTHON СЕРВЕРА
+// ════════════════════════════════════════════════════════════
+function connectWS() {
+  const url = g('serverUrl').value.trim();
+  const apiKey = g('apiKeyInput') ? g('apiKeyInput').value.trim() : '';
+  if (!url) { showToast('⚠️ Введи URL сервера'); return; }
+
+  // Зберігаємо в localStorage
+  localStorage.setItem('nt_server_url', url);
+  if (apiKey) {
+    localStorage.setItem('nt_api_key', apiKey);
+    localStorage.setItem('neuraltrade_api_key', apiKey);
+  }
+
+  if (wsConn) { try { wsConn.close(); } catch(_){} }
+  setConnState('wait', '...');
+  addLog('info', `Підключення до ${url}...`);
+
+  try {
+    wsConn = new WebSocket(url);
+
+    wsConn.onopen = () => {
+      serverMode = true;
+      setConnState('ok', 'СЕРВЕР OK');
+      g('serverBar').style.display = 'none';
+      addLog('ok', 'Python сервер підключено!');
+      showToast('✅ Сервер підключено');
+    };
+
+    wsConn.onmessage = (e) => {
+      try { handleServerMsg(JSON.parse(e.data)); }
+      catch(_) {}
+    };
+
+    wsConn.onerror = () => {
+      setConnState('err', 'СЕРВЕР НЕДОСТУПНИЙ');
+      addLog('warn', 'Сервер недоступний — запусти: python server.py');
+    };
+
+    wsConn.onclose = () => {
+      if (serverMode) {
+        serverMode = false;
+        setConnState('err', 'ВІДКЛЮЧЕНО');
+        addLog('warn', 'WS закрито');
+        // Авто-реконнект через 5с
+        setTimeout(connectWS, 5000);
+      }
+    };
+  } catch(e) {
+    setConnState('err', 'ПОМИЛКА');
+    addLog('err', `WS помилка: ${e.message}`);
+  }
+}
+
+function handleServerMsg(msg) {
+  switch(msg.type) {
+    case 'init':
+      updateStats(msg);
+      if (msg.trades) renderTrades(msg.trades);
+      if (msg.mode) updateModeUI(msg.mode);
+      break;
+
+    case 'prices':
+      for (const [pair, price] of Object.entries(msg.prices)) {
+        if (PRICES[pair]) PRICES[pair].p = price;
+        if (pair === curPair) updatePriceDisplay(price);
+      }
+      break;
+
+    case 'agent_status':
+      for (const [name, info] of Object.entries(msg.agents)) {
+        updateAgent(name, info.status, info.state);
+      }
+      break;
+
+    case 'tech_result':
+      if (msg.pair === curPair) {
+        updateIndicator('rsi',  msg.rsi,  sigClass(msg.rsi, 35, 65));
+        updateIndicator('macd', msg.macd > 0 ? `+${msg.macd.toFixed(0)}` : msg.macd.toFixed(0), msg.macd > 0 ? 'bull' : 'bear');
+        updateSigBar('sig_rsi', `◆ RSI ${msg.rsi}`, msg.rsi < 35 ? 'b' : msg.rsi > 65 ? 's' : 'n');
+        addLog('info', `📊 Tech ${msg.pair}: ${msg.signal} RSI=${msg.rsi}`);
+      }
+      break;
+
+    case 'sentiment_result':
+      if (msg.pair === curPair) {
+        updateIndicator('fg',   msg.fear_greed.toFixed(0), fgClass(msg.fear_greed));
+        updateIndicator('fund', (msg.funding * 100).toFixed(4) + '%', msg.funding > 0.001 ? 'bear' : msg.funding < -0.001 ? 'bull' : 'neut');
+        updateSigBar('sig_fg',   `◆ F&G ${msg.fear_greed.toFixed(0)}`, fgClass(msg.fear_greed) === 'bull' ? 'b' : 'n');
+        updateSigBar('sig_fund', `◆ Fund ${(msg.funding*100).toFixed(3)}%`, 'n');
+        addLog('info', `📰 Sentiment ${msg.pair}: F&G=${msg.fear_greed.toFixed(0)} fund=${(msg.funding*100).toFixed(4)}%`);
+      }
+      break;
+
+    case 'ml_result':
+      if (msg.pair === curPair) {
+        const wp = (msg.win_prob * 100).toFixed(1);
+        updateIndicator('ml', wp + '%', msg.win_prob > 0.62 ? 'bull' : msg.win_prob < 0.38 ? 'bear' : 'neut');
+        addLog('info', `🤖 ML ${msg.pair}: win=${wp}%`);
+      }
+      break;
+
+    case 'debate_result':
+      if (msg.pair === curPair) {
+        updateDecision(msg.action, msg.confidence, msg.reason, msg.bull_votes, msg.bear_votes);
+        addLog(msg.action === 'BUY' ? 'ok' : msg.action === 'SELL' ? 'err' : 'warn',
+          `🗳 Debate ${msg.pair}: ${msg.action} conf=${(msg.confidence*100).toFixed(0)}% ${msg.bull_votes}B/${msg.bear_votes}Be`);
+      }
+      break;
+
+    case 'risk_result':
+      addLog(msg.allowed ? 'ok' : 'warn',
+        `🛡 Risk ${msg.pair}: ${msg.allowed ? 'OK' : 'BLOCKED'} — ${msg.reason}`);
+      break;
+
+    case 'trade_opened':
+      addLog('ok', `⚡ #${msg.trade_id} ${msg.side} ${msg.pair} @ $${fmt(msg.price)} [$${fmt(msg.amount)}]`);
+      showToast(`${msg.side === 'BUY' ? '🟢' : '🔴'} ${msg.side} ${msg.pair} @ $${fmt(msg.price)}`);
+      fetchTrades();
+      break;
+
+    case 'stats_update':
+      updateStats(msg);
+      if (msg.open_trades) renderTrades(msg.open_trades, true);
+      break;
+
+    case 'ml_retrained':
+      mlAccuracy = msg.accuracy;
+      mlTradesN  = msg.n_samples;
+      updateMLStats();
+      addLog('ok', `🧠 ML ${msg.pair}: ${(msg.accuracy*100).toFixed(1)}% (${msg.n_samples} зр.)`);
+      showToast(`🧠 ML перенавчено: ${(msg.accuracy*100).toFixed(1)}%`);
+      break;
+
+    case 'mode_changed':
+      updateModeUI(msg.mode);
+      addLog('info', `Режим: ${msg.mode.toUpperCase()}`);
+      break;
+
+    case 'agent_log':
+      addLog(msg.level || 'info', msg.message);
+      break;
+  }
+}
+
+async function fetchTrades() {
+  try {
+    const apiUrl = g('serverUrl').value.replace('ws://', 'http://').replace('/ws', '');
+    const apiKey2 = localStorage.getItem('neuraltrade_api_key') || localStorage.getItem('nt_api_key') || '';
+    const r = await fetch(`${apiUrl}/api/trades?limit=20`, {headers:{'X-API-Key':apiKey2}});
+    const data = await r.json();
+    renderTrades(data);
+  } catch(_) {}
+}
+
+// ════════════════════════════════════════════════════════════
+//  DEMO MODE (без сервера)
+// ════════════════════════════════════════════════════════════
+function runDemoMode() {
+  g('serverBar').style.display = 'none';
+  setConnState('wait', 'DEMO РЕЖИМ');
+  addLog('ok', 'Demo режим без сервера');
+  addLog('warn', 'Для реальних даних запусти: python server.py');
+}
+
+// ════════════════════════════════════════════════════════════
+//  CANVAS CHART
+// ════════════════════════════════════════════════════════════
+const cv = g('ch'), cx = cv.getContext('2d');
+function rsz() {
+  cv.width  = cv.offsetWidth  * devicePixelRatio;
+  cv.height = cv.offsetHeight * devicePixelRatio;
+  cx.scale(devicePixelRatio, devicePixelRatio);
+}
+window.addEventListener('resize', () => { rsz(); draw(); });
+
+function initHist() {
+  hist = []; let p = PRICES[curPair].p;
+  for (let i = 0; i < 80; i++) { p += (Math.random()-.5)*p*.004; hist.push(p); }
+  PRICES[curPair].p = p;
+}
+
+function draw() {
+  if (!cv.offsetWidth) return; rsz();
+  const W = cv.offsetWidth, H = cv.offsetHeight;
+  cx.clearRect(0,0,W,H);
+  if (hist.length < 2) return;
+  const mn = Math.min(...hist)*.999, mx = Math.max(...hist)*1.001, rng = mx-mn;
+  const tx = i => (i/(hist.length-1))*W;
+  const ty = v => H - ((v-mn)/rng)*H*.82 - H*.1;
+  cx.strokeStyle='rgba(13,42,48,.7)'; cx.lineWidth=1;
+  for (let i=0;i<=3;i++) {
+    const y = H*.1+(H*.82/3)*i;
+    cx.beginPath(); cx.setLineDash([3,7]); cx.moveTo(0,y); cx.lineTo(W,y); cx.stroke();
+    cx.fillStyle='rgba(58,102,112,.5)';
+    cx.font=`${Math.max(9,W*.011)}px Share Tech Mono`;
+    cx.fillText('$'+(mx-(rng*i/3)).toLocaleString('en',{maximumFractionDigits:0}),4,y-3);
+  }
+  cx.setLineDash([]);
+  const gr = cx.createLinearGradient(0,0,0,H);
+  gr.addColorStop(0,'rgba(0,255,231,.1)'); gr.addColorStop(1,'rgba(0,255,231,0)');
+  cx.beginPath(); cx.moveTo(tx(0),H);
+  hist.forEach((v,i)=>cx.lineTo(tx(i),ty(v)));
+  cx.lineTo(tx(hist.length-1),H); cx.closePath(); cx.fillStyle=gr; cx.fill();
+  cx.beginPath(); cx.strokeStyle='#00ffe7'; cx.lineWidth=1.5;
+  cx.shadowBlur=8; cx.shadowColor='rgba(0,255,231,.35)';
+  hist.forEach((v,i)=>i===0?cx.moveTo(tx(i),ty(v)):cx.lineTo(tx(i),ty(v)));
+  cx.stroke(); cx.shadowBlur=0;
+  mkrs.forEach(m=>{
+    if(m.i<0||m.i>=hist.length)return;
+    const x=tx(m.i), y=ty(hist[m.i]);
+    cx.beginPath(); cx.arc(x,y,4,0,Math.PI*2);
+    cx.fillStyle=m.s==='BUY'?'rgba(0,255,136,.9)':'rgba(255,62,108,.9)';
+    cx.fill(); cx.strokeStyle='#020608'; cx.lineWidth=1.5; cx.stroke();
+    cx.fillStyle=m.s==='BUY'?'#00ff88':'#ff3e6c';
+    cx.font='bold 9px Share Tech Mono';
+    cx.fillText(m.s==='BUY'?'▲':'▼',x-4,y-7);
+  });
+  const ly = ty(hist[hist.length-1]);
+  cx.beginPath(); cx.strokeStyle='rgba(0,255,231,.2)'; cx.lineWidth=1; cx.setLineDash([4,6]);
+  cx.moveTo(0,ly); cx.lineTo(W,ly); cx.stroke(); cx.setLineDash([]);
+}
+
+// ════════════════════════════════════════════════════════════
+//  LOCAL SIM TICK (коли сервер не підключений)
+// ════════════════════════════════════════════════════════════
+function localTick() {
+  if (serverMode) return;
+  const p = PRICES[curPair];
+  p.p += (Math.random()-.48)*p.p*.004;
+  hist.push(p.p); if(hist.length>120)hist.shift();
+  mkrs = mkrs.map(m=>({...m,i:m.i-1}));
+  updatePriceDisplay(p.p);
+  draw();
+  // Локальний агент (симуляція)
+  if (Math.random() < .08) localAgentCycle();
+}
+
+function localAgentCycle() {
+  const price = PRICES[curPair].p;
+  const rsi   = 40 + Math.random()*30;
+  const macd  = (Math.random()-.4)*300;
+  const fg    = 30 + Math.random()*50;
+  const fund  = (Math.random()-.5)*.002;
+  const ml_p  = .45 + Math.random()*.2;
+
+  updateIndicator('rsi',  rsi.toFixed(1),  sigClass(rsi, 35, 65));
+  updateIndicator('macd', (macd>0?'+':'')+macd.toFixed(0), macd>0?'bull':'bear');
+  updateIndicator('fg',   fg.toFixed(0),   fgClass(fg));
+  updateIndicator('fund', (fund*100).toFixed(4)+'%', 'neut');
+  updateIndicator('ml',   (ml_p*100).toFixed(1)+'%', ml_p>.62?'bull':ml_p<.38?'bear':'neut');
+
+  // Симуляція Debate AI
+  const bull = rsi<45 && macd>0 ? 3 : rsi<55 ? 2 : 1;
+  const bear = 5 - bull;
+  const action = bull > bear ? 'BUY' : bull < bear ? 'SELL' : 'HOLD';
+  const conf = .5 + Math.abs(bull-bear)*.08;
+  updateDecision(action, conf, `RSI ${rsi.toFixed(1)} | MACD ${macd>0?'↑':'↓'} | F&G ${fg.toFixed(0)}`, bull, bear);
+
+  // Рідко — симулювати угоду
+  if (conf > .62 && action !== 'HOLD' && Math.random() < .3) {
+    localExecTrade(action, price, conf);
+  }
+}
+
+function localExecTrade(side, price, conf) {
+  const amt   = balance * .05;
+  const isW   = Math.random() < conf * .88;
+  const gross = parseFloat((amt*(isW?(0.8+Math.random()*2.5):(-(0.3+Math.random()*1.5)))/100).toFixed(2));
+  const fee   = parseFloat((amt*.001*2).toFixed(4));
+  const net   = gross - fee;
+
+  balance = parseFloat((balance+net).toFixed(2));
+  grossPnl=parseFloat((grossPnl+gross).toFixed(2));
+  totalFees=parseFloat((totalFees+fee).toFixed(4));
+  if(net>0)wins++;else loss++;
+  tradeId++;
+  mlTradesN++;
+
+  const t = {
+    id: tradeId, ts_open: new Date().toLocaleTimeString('uk'),
+    pair: curPair, side, entry_price: price,
+    fee_usd: fee, net_pnl: net, gross_pnl: gross,
+    status: net>0?'TP':'SL', mode: 'demo',
+  };
+  trades.unshift(t);
+  mkrs.push({i:hist.length-1, s:side});
+  if(mkrs.length>10)mkrs.shift();
+
+  renderTrades(trades.slice(0,20));
+  localUpdateStats();
+  updateMLStats();
+  addLog(net>=0?'ok':'err', `#${tradeId} ${side} ${curPair} @ $${fmt(price)} net:${net>=0?'+':''}$${net.toFixed(2)}`);
+  showToast(`${side==='BUY'?'🟢':'🔴'} ${side} ${curPair} net:${net>=0?'+':''}$${net.toFixed(2)}`);
+}
+
+// ════════════════════════════════════════════════════════════
+//  UI HELPERS
+// ════════════════════════════════════════════════════════════
+function updatePriceDisplay(price) {
+  const base = PRICES[curPair].b;
+  const chg  = (price - base) / base * 100;
+  g('cPrice').textContent = '$' + fmt(price);
+  const pe = g('pChg');
+  pe.textContent = (chg>=0?'▲ +':'▼ ') + chg.toFixed(2) + '%';
+  pe.className = 'pchg ' + (chg>=0?'up':'dn');
+}
+
+function updateDecision(action, conf, reason, bull, bear) {
+  const cl = action.toLowerCase();
+  const color = action==='BUY'?'var(--grn)':action==='SELL'?'var(--red)':'var(--yel)';
+  const pct = (conf*100).toFixed(0) + '%';
+  [['decBox','decAction','decReason','decConf','confFill','confPct','vBull','vBear'],
+   ['mdecBox','mdecAction','mdecReason','mdecConf','mconfFill',null,'mvBull','mvBear']]
+  .forEach(ids=>{
+    const box=g(ids[0]); if(!box)return;
+    box.className='db2 '+cl;
+    g(ids[1]).textContent=action; g(ids[1]).className='da '+cl;
+    g(ids[2]).textContent=reason;
+    g(ids[3]).textContent=pct;
+    g(ids[4]).style.width=conf*100+'%'; g(ids[4]).style.background=color;
+    if(ids[5])g(ids[5]).textContent=pct;
+    g(ids[6]).textContent=`🐂 Bull: ${bull}`;
+    g(ids[7]).textContent=`🐻 Bear: ${bear}`;
+  });
+}
+
+function updateAgent(name, status, state) {
+  ['','m'].forEach(pfx=>{
+    const ag=g(pfx+'ag_'+name);
+    const as=g(pfx+'as_'+name);
+    const ad=g(pfx+'ad_'+name);
+    if(!ag)return;
+    if(as)as.textContent=status;
+    if(ad)ad.className='ad '+(state==='thinking'?'t':state==='active'?'a':'i');
+    ag.className='ag '+(state!=='idle'?'on':'');
+  });
+}
+
+function updateIndicator(name, val, cls) {
+  ['i_','mi_'].forEach(p=>{
+    const el=g(p+name); if(el)el.textContent=val;
+  });
+  ['is_','mis_'].forEach(p=>{
+    const el=g(p+name); if(el){el.textContent=cls==='bull'?'BULL':cls==='bear'?'BEAR':'NEUT';el.className='is '+cls;}
+  });
+}
+
+function updateSigBar(id, text, cls) {
+  const el=g(id); if(!el)return;
+  el.textContent=text; el.className='sc '+cls;
+}
+
+function sigClass(val, low, high) {
+  return val < low ? 'bull' : val > high ? 'bear' : 'neut';
+}
+function fgClass(fg) {
+  return fg < 30 ? 'bull' : fg > 70 ? 'bear' : 'neut';
+}
+
+function renderTrades(list, prepend=false) {
+  const tbody = g('tradesBody');
+  const rows = list.slice(0,25).map((t,i)=>`
+    <tr class="${i===0&&prepend?'nr':''}">
+      <td style="color:var(--mut)">${t.id||'—'}</td>
+      <td style="color:var(--mut)">${t.ts_open||t.time||'—'}</td>
+      <td style="color:var(--acc)">${t.pair}</td>
+      <td><span class="badge ${(t.side||'').toLowerCase()}">${t.side}</span></td>
+      <td>$${fmt(t.entry_price||t.price||0)}</td>
+      <td class="py">-$${fmt(t.fee_usd||t.fee||0,4)}</td>
+      <td class="${(t.net_pnl||t.net||0)>=0?'pg':'prr'}" style="font-weight:700">
+        ${(t.net_pnl||t.net||0)>=0?'+':''}$${fmt(t.net_pnl||t.net||0)}
+      </td>
+      <td><span class="badge ${(t.status||'').toLowerCase()}">${t.status||'—'}</span></td>
+      <td><span class="badge ${t.mode==='live'?'live2':'demo'}">${t.mode||'demo'}</span></td>
+    </tr>`).join('');
+  tbody.innerHTML = rows;
+}
+
+function updateStats(data) {
+  const net   = parseFloat(data.net_pnl||0);
+  const fees  = parseFloat(data.fees||0);
+  const gross = parseFloat(data.gross_pnl||0);
+  const bal   = parseFloat(data.balance||balance);
+  const total = parseInt(data.total||0);
+  const wr    = parseFloat(data.winrate||0);
+  const chg   = bal - sBal;
+  const pct   = (chg/sBal*100).toFixed(2);
+
+  [['balVal','balChg','statTrades','statWR','statNet','statFees'],
+   ['mBalVal','mBalChg','mStatT','mStatW','mStatN','mStatF']]
+  .forEach(ids=>{
+    const get=id=>g(id);
+    get(ids[0])&&(get(ids[0]).textContent=fmt(bal));
+    if(get(ids[1])){get(ids[1]).textContent=(chg>=0?'+':'')+'$'+fmt(chg)+' ('+(chg>=0?'+':'')+pct+'%)';get(ids[1]).className='bc'+(chg<0?' neg':'');}
+    get(ids[2])&&(get(ids[2]).textContent=total);
+    get(ids[3])&&(get(ids[3]).textContent=wr?wr.toFixed(1)+'%':'—');
+    if(get(ids[4])){get(ids[4]).textContent=(net>=0?'+':'')+'$'+fmt(net);get(ids[4]).className='sv '+(net>=0?'g':'r');}
+    if(get(ids[5])){get(ids[5]).textContent='$'+fmt(fees,4);get(ids[5]).className='sv y';}
+  });
+  g('bGross').textContent=(gross>=0?'+':'')+'$'+fmt(gross);
+  g('bFee').textContent='-$'+fmt(fees,4);
+  g('bNet').textContent=(net>=0?'+':'')+'$'+fmt(net);
+  g('bNet').className=(net>=0?'bsv pg':'bsv prr');
+  if(data.open_trades) g('bOpen').textContent=data.open_trades.length||0;
+}
+
+function localUpdateStats() {
+  updateStats({
+    net_pnl: grossPnl-totalFees, fees: totalFees,
+    gross_pnl: grossPnl, balance: balance,
+    total: trades.length, winrate: trades.length?Math.round(wins/trades.length*100):0,
+  });
+}
+
+function updateMLStats() {
+  const pct = Math.min(100, mlTradesN/30*100);
+  g('mlN').textContent = `${mlTradesN}/30`;
+  g('mlBar').style.width = pct+'%';
+  g('mlAcc').textContent = mlAccuracy ? (mlAccuracy*100).toFixed(1)+'%' : '—';
+  g('mlStatus').textContent = mlTradesN < 30
+    ? `Збір даних (ще ${30-mlTradesN})`
+    : mlAccuracy ? 'Модель активна' : 'Готовий до навчання';
+}
+
+function updateModeUI(mode) {
+  demoMode = mode === 'demo';
+  const isDe = demoMode;
+  [g('modeBadge'),g('bottomBadge')].forEach(el=>{
+    if(!el)return;
+    el.className='mode-badge '+(isDe?'demo':'live');
+    el.textContent=isDe?'◆ DEMO':'● LIVE';
+  });
+  g('balLabel').textContent = isDe?'DEMO БАЛАНС':'LIVE БАЛАНС';
+  if(g('mBalLabel'))g('mBalLabel').textContent=isDe?'DEMO БАЛАНС':'LIVE БАЛАНС';
+}
+
+// ════════════════════════════════════════════════════════════
+//  SETTINGS / CONFIG
+// ════════════════════════════════════════════════════════════
+function openSettings()  { g('settingsModal').classList.add('open'); }
+function closeSettings() { g('settingsModal').classList.remove('open'); }
+
+function onModeSwitch(cb) {
+  const mode = cb.checked ? 'demo' : 'live';
+  const info = g('modeInfo');
+  if (mode === 'live') {
+    info.className='sbox warn';
+    info.innerHTML='⚠️ <b>LIVE режим!</b> Реальні гроші.<br>Переконайся що API ключі задані та testnet=false';
+  } else {
+    info.className='sbox info';
+    info.innerHTML='ℹ️ Demo: реальні ціни + симульований баланс $1000';
+  }
+  if (serverMode) setModeOnServer(mode);
+}
+
+function saveAPIConfig() {
+  const key = g('cfgKey').value.trim();
+  const sec = g('cfgSec').value.trim();
+  if (!key || !sec) { showToast('⚠️ Введи API Key і Secret'); return; }
+  if (serverMode) {
+    sendToServer('/api/config', {data: {
+      api_key: key, api_secret: sec,
+      testnet: g('cfgTestnet').checked,
+    }}).then(()=>{ showToast('✅ API збережено на сервері'); addLog('ok','API ключі збережено'); });
+  } else {
+    showToast('⚠️ Сервер не підключений — запусти python server.py');
+  }
+}
+
+async function sendConfigToServer() {
+  if (!serverMode) { showToast('⚠️ Сервер не підключений'); return; }
+  const data = {
+    position_size_pct: g('cfgPos').value/100,
+    stop_loss_pct: g('cfgSL').value/100,
+    take_profit_pct: g('cfgTP').value/100,
+    min_confidence: g('cfgConf').value/100,
+    use_llm: g('cfgLLM').checked,
+    openai_api_key: g('cfgOAI').value,
+    telegram_token: g('cfgTGToken').value,
+    telegram_chat_id: g('cfgTGChat').value,
+  };
+  await sendToServer('/api/config', {data});
+  showToast('💾 Налаштування збережено');
+  closeSettings();
+}
+
+async function setModeOnServer(mode) {
+  await sendToServer('/api/mode', {mode});
+}
+
+async function triggerRetrain() {
+  if (!serverMode) { showToast('⚠️ Підключи сервер'); return; }
+  await sendToServer('/api/retrain', {});
+  showToast('🧠 ML навчання запущено...');
+  addLog('info', 'ML перенавчання запущено на сервері');
+}
+
+async function exportCSV() {
+  if (serverMode) {
+    const url = g('serverUrl').value.replace('wss://','https://').replace('ws://','http://').replace('/ws','');
+    const ek = localStorage.getItem('neuraltrade_api_key')||'';
+    window.open(`${url}/api/export`, '_blank');
+  } else {
+    // Локальний експорт
+    if (!trades.length) { showToast('Немає угод'); return; }
+    const H = ['ID','Час','Пара','Сторона','Ціна','Комісія','Net P&L','Статус','Режим'];
+    const rows = trades.map(t=>[t.id,t.ts_open||t.time,t.pair,t.side,
+      t.entry_price||t.price,t.fee_usd||t.fee,t.net_pnl||t.net,t.status,t.mode||'demo']);
+    const csv = [H,...rows].map(r=>r.join(',')).join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv'}));
+    a.download = `neuraltrade_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    showToast(`↓ CSV: ${trades.length} угод`);
+  }
+}
+
+async function sendToServer(path, body) {
+  const url = g('serverUrl').value.replace('ws://','http://').replace('/ws','');
+  try {
+    const apiKey = localStorage.getItem('neuraltrade_api_key') || localStorage.getItem('nt_api_key') || '';
+    const r = await fetch(url+path, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','X-API-Key':apiKey},
+      body: JSON.stringify(body),
+    });
+    return await r.json();
+  } catch(e) {
+    addLog('err', `API ${path}: ${e.message}`);
+  }
+}
+
+function toggleMode() {
+  if (serverMode) {
+    const newMode = demoMode ? 'live' : 'demo';
+    if (newMode === 'live' && !confirm('⚠️ Перейти в LIVE режим? Реальні гроші!')) return;
+    setModeOnServer(newMode);
+  } else {
+    demoMode = !demoMode;
+    updateModeUI(demoMode ? 'demo' : 'live');
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+//  LOG + TOAST
+// ════════════════════════════════════════════════════════════
+function addLog(type, msg) {
+  const now = new Date().toLocaleTimeString('uk');
+  logs.unshift({time:now,type,msg});
+  if(logs.length>60) logs.pop();
+  const html = logs.slice(0,30).map(l=>
+    `<div class="le"><span class="lt">${l.time}</span><span class="lm ${l.type}">${l.msg}</span></div>`
+  ).join('');
+  ['logWin','mLogWin'].forEach(id=>{const el=g(id);if(el)el.innerHTML=html;});
+}
+
+function showToast(msg) {
+  const t=g('toast'); t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2500);
+}
+
+function setConnState(state, label) {
+  const pill=g('connPill'), dot=g('connDot'), lbl=g('connLabel');
+  pill.className='conn-pill '+state;
+  dot.className='dot '+(state==='ok'?'g':state==='err'?'r':'y');
+  lbl.textContent=label;
+}
+
+// ════════════════════════════════════════════════════════════
+//  PAIR SELECT + MOBILE
+// ════════════════════════════════════════════════════════════
+function selPair(pair, el) {
+  curPair = pair;
+  document.querySelectorAll('.ptab').forEach(t=>t.classList.remove('on'));
+  el.classList.add('on');
+  initHist(); mkrs=[];
+  draw();
+  addLog('info', `Переключено: ${pair}`);
+}
+
+function showTab(tab, btn) {
+  document.querySelectorAll('.nb').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  const pc=g('pChart'),pa=g('mpAgents'),pd=g('mpDecision');
+  [pc,pa,pd].forEach(el=>{el.style.display='none';el.classList.remove('vis');});
+  if(tab==='chart'){pc.style.display='flex';pc.classList.add('vis');}
+  if(tab==='agents'){pa.style.display='flex';pa.classList.add('vis');}
+  if(tab==='decision'){pd.style.display='flex';pd.classList.add('vis');}
+}
+
+// ════════════════════════════════════════════════════════════
+//  INIT
+// ════════════════════════════════════════════════════════════
+setInterval(()=>{g('ht').textContent=new Date().toLocaleTimeString('uk');},1000);
+setInterval(localTick, 900);
+
+initHist(); rsz(); draw();
+if(window.innerWidth<=900) showTab('chart',document.querySelector('.nb'));
+
+addLog('ok',  'NeuralTrade AI v4.0 — Multi-Agent System');
+addLog('info','Натисни "ПІДКЛЮЧИТИ" щоб з\'єднатись з Python сервером');
+addLog('info','Або "DEMO без сервера" для симуляції');
+addLog('warn','Для старту: pip install -r requirements.txt && python server.py');
+
+// ── Відновлення налаштувань при завантаженні ──
+(function() {
+  const savedUrl = localStorage.getItem('nt_server_url');
+  const savedKey = localStorage.getItem('nt_api_key');
+  if (savedUrl && g('serverUrl')) g('serverUrl').value = savedUrl;
+  if (savedKey && g('apiKeyInput')) g('apiKeyInput').value = savedKey;
+  if (savedUrl && savedKey) setTimeout(connectWS, 1000);
+})();
+</script>
+</body>
+</html>
