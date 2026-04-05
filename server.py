@@ -602,5 +602,5 @@ if __name__ == "__main__":
         app,
         host=cfg.server_host or "0.0.0.0",
         port=cfg.server_port or 8000,
-        log_level="warning",
-    )
+    log_level="warning",
+)
