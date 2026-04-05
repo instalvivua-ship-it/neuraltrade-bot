@@ -80,12 +80,10 @@ class TechAnalystAgent:
                 "enableRateLimit": True,
                 "options": {"defaultType": "spot"},
             }
-            if self.cfg.testnet:
-                params["urls"] = {"api": {
-                    "public":  "https://testnet.binance.vision/api",
-                    "private": "https://testnet.binance.vision/api",
-                }}
-            self._exchange = ccxt.binance(params)
+            # Для цін використовуємо публічний REST — без testnet
+            # Testnet тільки для реальних ордерів
+            self._exchange = None  # вимикаємо ccxt для цін
+            log.info("✅ Ціни: публічний Binance REST API")
             log.info(f"✅ Binance {'Testnet' if self.cfg.testnet else 'LIVE'}")
         except Exception as e:
             log.error(f"Binance init: {e}")
