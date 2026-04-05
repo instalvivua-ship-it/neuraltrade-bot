@@ -1186,7 +1186,9 @@ function showTab(tab, btn) {
 //  INIT
 // ════════════════════════════════════════════════════════════
 setInterval(()=>{g('ht').textContent=new Date().toLocaleTimeString('uk');},1000);
-setInterval(localTick, 900);
+setInterval(() => {
+  if (!serverMode) localTick();
+}, 900);
 
 initHist(); rsz(); draw();
 if(window.innerWidth<=900) showTab('chart',document.querySelector('.nb'));
