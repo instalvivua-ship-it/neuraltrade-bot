@@ -1,71 +1,51 @@
 {
-  "// ═══════════ NeuralTrade AI v2 ═══════════": "",
-
-  "// ─── BINANCE ───────────────────────────────": "",
   "api_key":    "",
   "api_secret": "",
-  "testnet":    true,
+  "testnet":    false,
   "mode":       "demo",
 
-  "// ─── ПАРИ ──────────────────────────────────": "",
   "pairs":     ["BTC/USDT", "ETH/USDT", "SOL/USDT"],
   "timeframe": "1h",
   "cycle_interval_minutes": 5,
 
-  "// ─── РИЗИК ──────────────────────────────────": "",
   "min_confidence":    0.62,
   "max_open_trades":   3,
   "max_drawdown_pct":  0.10,
   "max_loss_streak":   5,
   "block_correlated_pairs": false,
 
-  "// ─── POSITION SIZING ────────────────────────": "",
-  "// position_sizing_method: atr | kelly | fixed": "",
   "position_sizing_method": "atr",
   "position_size_pct":   0.05,
   "risk_per_trade_pct":  0.01,
   "max_position_pct":    0.15,
 
-  "// ─── ATR SL/TP (замість фіксованих %) ───────": "",
   "atr_sl_multiplier":  1.5,
   "atr_tp_multiplier":  3.0,
 
-  "// ─── TRAILING STOP ──────────────────────────": "",
   "trailing_stop_enabled":        true,
   "trailing_stop_activation_pct": 0.03,
   "trailing_stop_trail_pct":      0.01,
 
-  "// ─── VOLATILITY FILTER ──────────────────────": "",
-  "// пауза якщо свічка > N × ATR": "",
   "volatility_pause_multiplier":  2.5,
 
-  "// ─── КОМІСІЇ ────────────────────────────────": "",
   "fee_rate": 0.001,
   "use_bnb":  false,
   "max_slippage_pct": 0.005,
 
-  "// ─── ML ─────────────────────────────────────": "",
   "retrain_every_hours":   24,
   "min_trades_for_train":  100,
 
-  "// ─── LLM (опціонально) ──────────────────────": "",
   "use_llm":           false,
   "openai_api_key":    "",
   "anthropic_api_key": "",
 
-  "// ─── TELEGRAM ───────────────────────────────": "",
-  "// Команди: /status /pause /resume /mode_swap /panic_close /backup": "",
   "telegram_token":    "",
   "telegram_chat_id":  "",
   "telegram_backup_db": true,
 
-  "// ─── СЕРВЕР ─────────────────────────────────": "",
   "server_host": "0.0.0.0",
   "server_port": 8000,
 
-  "// ─── ДЕМО ───────────────────────────────────": "",
   "initial_demo_balance": 1000.0,
-
-  "// ─── БД ─────────────────────────────────────": "",
   "db_path": "neuraltrade.db"
 }
