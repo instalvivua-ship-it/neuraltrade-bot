@@ -10,7 +10,7 @@
   "// ─── ПАРИ ──────────────────────────────────": "",
   "pairs":     ["BTC/USDT", "ETH/USDT", "SOL/USDT"],
   "timeframe": "1h",
-  "cycle_interval_minutes": 15,
+  "cycle_interval_minutes": 5,
 
   "// ─── РИЗИК ──────────────────────────────────": "",
   "min_confidence":    0.62,
