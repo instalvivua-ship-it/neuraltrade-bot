@@ -144,8 +144,14 @@ async def verify_api_key(
 @app.get("/health")
 def health():
     """Публічний — перевірка чи сервер живий."""
-    return {"status": "ok", "version": "2.0",
-            "mode": cfg.mode, "ts": datetime.now().isoformat()}
+    return {
+        "status":  "ok",
+        "version": "2.0",
+        "mode":    cfg.mode,
+        "pairs":   cfg.pairs,
+        "paused":  tg.is_paused,
+        "ts":      datetime.now().isoformat(),
+    }
 
 
 @app.get("/api/key-info")
@@ -365,7 +371,7 @@ def run_trading_cycle():
         "balance":    executor.get_balance(),
         "open_trades": _open,
         "open_count":  len(_open),
-        "ml_samples":  _stats.get("total", 0),
+        "ml_samples":  db.conn.execute("SELECT COUNT(*) FROM trades").fetchone()[0],
         "paused":     tg.is_paused,
     })
 
@@ -627,6 +633,27 @@ async def startup():
     asyncio.create_task(_broadcaster())
     asyncio.create_task(_price_ticker())
     asyncio.create_task(_agent_ticker())
+    asyncio.create_task(_self_ping())
+
+
+async def _self_ping():
+    """
+    Самопінг кожні 5 хв — запобігає засинанню Railway.
+    Railway засинає сервіс після ~10 хв без HTTP запитів.
+    """
+    import aiohttp
+    await asyncio.sleep(60)  # Чекаємо старту
+    port = int(os.environ.get("PORT", 8000))
+    url  = f"http://localhost:{port}/health"
+    while True:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as r:
+                    if r.status == 200:
+                        log.debug("🏓 Self-ping OK")
+        except Exception:
+            pass
+        await asyncio.sleep(300)  # Кожні 5 хвилин
 
     # Завантаження ML
     for pair in cfg.pairs:

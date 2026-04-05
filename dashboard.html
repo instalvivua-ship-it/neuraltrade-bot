@@ -587,7 +587,7 @@ let crosshair = {x: -1, y: -1};          // позиція кросхера // �
 let balance = 1000, sBal = 1000;
 let grossPnl = 0, totalFees = 0, wins = 0, loss = 0;
 let trades = [], hist = [], mkrs = [], logs = [], candles = [];
-let tradeId = 0, mlTradesN = 0, mlAccuracy = null;
+let tradeId = 0, mlTradesN = 0, mlAccuracy = null, mlLastWinProb = null;
 
 // ════════════════════════════════════════════════════════════
 //  WEBSOCKET — ПІДКЛЮЧЕННЯ ДО PYTHON СЕРВЕРА
@@ -721,9 +721,11 @@ function handleServerMsg(msg) {
 
     case 'ml_result':
       if (msg.pair === curPair) {
-        const wp = (msg.win_prob * 100).toFixed(1);
-        updateIndicator('ml', wp + '%', msg.win_prob > 0.62 ? 'bull' : msg.win_prob < 0.38 ? 'bear' : 'neut');
-        addLog('info', `🤖 ML ${msg.pair}: win=${wp}%`);
+        mlLastWinProb = msg.win_prob || 0;
+        var wp2 = (mlLastWinProb * 100).toFixed(1);
+        updateIndicator('ml', wp2 + '%', mlLastWinProb > 0.62 ? 'bull' : mlLastWinProb < 0.38 ? 'bear' : 'neut');
+        updateMLStats();
+        addLog('info', '🤖 ML ' + msg.pair + ': win=' + wp2 + '%');
       }
       break;
 
@@ -768,8 +770,8 @@ function handleServerMsg(msg) {
       break;
 
     case 'ml_retrained':
-      mlAccuracy = msg.accuracy;
-      mlTradesN  = msg.n_samples;
+      mlAccuracy   = msg.accuracy;
+      mlTradesN    = msg.n_samples || mlTradesN;
       updateMLStats();
       addLog('ok', `🧠 ML ${msg.pair}: ${(msg.accuracy*100).toFixed(1)}% (${msg.n_samples} зр.)`);
       showToast(`🧠 ML перенавчено: ${(msg.accuracy*100).toFixed(1)}%`);
@@ -793,6 +795,25 @@ async function fetchTrades() {
     const r = await fetch(`${apiUrl}/api/trades?limit=20`, {headers:{'X-API-Key':apiKey2}});
     const data = await r.json();
     renderTrades(data);
+    // Перерахувати статистику з отриманих угод
+    if (Array.isArray(data) && data.length > 0) {
+      var closed = data.filter(function(t){ return t.status && t.status !== 'OPEN'; });
+      var openT  = data.filter(function(t){ return !t.status || t.status === 'OPEN'; });
+      var totalFee2 = data.reduce(function(s,t){ return s + parseFloat(t.fee_usd||0); }, 0);
+      var grossSum  = closed.reduce(function(s,t){ return s + parseFloat(t.gross_pnl||0); }, 0);
+      var winsSum   = closed.filter(function(t){ return parseFloat(t.net_pnl||0) > 0; }).length;
+      var wr2 = closed.length ? Math.round(winsSum / closed.length * 100) : 0;
+      updateStats({
+        total:      closed.length,
+        winrate:    wr2,
+        gross_pnl:  grossSum,
+        fees:       totalFee2,
+        net_pnl:    grossSum - totalFee2,
+        balance:    balance,
+        open_trades: openT,
+        open_count:  openT.length,
+      });
+    }
   } catch(_) {}
 }
 
@@ -988,7 +1009,7 @@ function draw() {
   const lo    = mn - pad, hi = mx + pad, priceRng = hi - lo;
 
   const candleW = Math.max(1.5, (chartW / slice.length) * 0.82);
-  const MARG    = candleW + 2;
+  const MARG    = candleW + 20;  // ~1 см відступ від краю
   const tx      = i => MARG + (i / Math.max(1, slice.length - 1)) * (chartW - MARG * 2);
   const ty = v  => TOP + chartH - (v - lo) / priceRng * chartH;
 
@@ -1449,43 +1470,52 @@ function renderTrades(list, prepend=false) {
 
 
 function updateStats(data) {
-  const net   = parseFloat(data.net_pnl||0);
-  const fees  = parseFloat(data.fees||0);
-  const gross = parseFloat(data.gross_pnl||0);
-  const bal   = parseFloat(data.balance||balance);
-  const total = parseInt(data.total||0);
-  const wr    = parseFloat(data.winrate||0);
-  const chg   = bal - sBal;
-  const pct   = (chg/sBal*100).toFixed(2);
+  var net   = parseFloat(data.net_pnl   || 0);
+  var fees  = parseFloat(data.fees      || 0);
+  var gross = parseFloat(data.gross_pnl || 0);
+  var bal   = parseFloat(data.balance   || balance || 1000);
+  var total = parseInt(data.total       || 0);
+  var wr    = parseFloat(data.winrate   || 0);
+  var chg   = bal - sBal;
+  var pct   = sBal > 0 ? (chg / sBal * 100).toFixed(2) : '0.00';
 
-  [['balVal','balChg','statTrades','statWR','statNet','statFees'],
-   ['mBalVal','mBalChg','mStatT','mStatW','mStatN','mStatF']]
-  .forEach(ids=>{
-    const get=id=>g(id);
-    get(ids[0])&&(get(ids[0]).textContent=fmt(bal));
-    if(get(ids[1])){get(ids[1]).textContent=(chg>=0?'+':'')+'$'+fmt(chg)+' ('+(chg>=0?'+':'')+pct+'%)';get(ids[1]).className='bc'+(chg<0?' neg':'');}
-    get(ids[2])&&(get(ids[2]).textContent=total);
-    get(ids[3])&&(get(ids[3]).textContent=wr?wr.toFixed(1)+'%':'—');
-    if(get(ids[4])){get(ids[4]).textContent=(net>=0?'+':'')+'$'+fmt(net);get(ids[4]).className='sv '+(net>=0?'g':'r');}
-    if(get(ids[5])){get(ids[5]).textContent='$'+fmt(fees,4);get(ids[5]).className='sv y';}
-  });
-  g('bGross').textContent=(gross>=0?'+':'')+'$'+fmt(gross);
-  g('bFee').textContent='-$'+fmt(fees,4);
-  g('bNet').textContent=(net>=0?'+':'')+'$'+fmt(net);
-  g('bNet').className=(net>=0?'bsv pg':'bsv prr');
-  // Лічильник відкритих угод
+  // ── Баланс ──────────────────────────────────────────────────
+  var setEl = function(id, val) { if (g(id)) g(id).textContent = val; };
+  var chgStr = (chg >= 0 ? '+' : '') + '$' + fmt(chg) + ' (' + (chg >= 0 ? '+' : '') + pct + '%)';
+  setEl('balVal',  fmt(bal));
+  setEl('mBalVal', fmt(bal));
+  if (g('balChg'))  { g('balChg').textContent  = chgStr; g('balChg').className  = 'bc' + (chg < 0 ? ' neg' : ''); }
+  if (g('mBalChg')) { g('mBalChg').textContent = chgStr; g('mBalChg').className = 'bc' + (chg < 0 ? ' neg' : ''); }
+
+  // ── УГОД (лічильник закритих) ────────────────────────────────
+  setEl('statTrades', total);
+  setEl('mStatT',     total);
+
+  // ── WINRATE ──────────────────────────────────────────────────
+  var wrStr = (wr && total) ? wr.toFixed(1) + '%' : '—';
+  setEl('statWR', wrStr);
+  setEl('mStatW', wrStr);
+
+  // ── NET P&L ──────────────────────────────────────────────────
+  var netStr = (net >= 0 ? '+' : '') + '$' + fmt(net);
+  if (g('statNet')) { g('statNet').textContent = netStr; g('statNet').className = 'sv ' + (net >= 0 ? 'g' : 'r'); }
+
+  // ── КОМІСІЇ ──────────────────────────────────────────────────
+  if (g('statFees')) { g('statFees').textContent = '$' + fmt(fees, 4); }
+
+  // ── Bottom bar ───────────────────────────────────────────────
+  if (g('bGross')) g('bGross').textContent = (gross >= 0 ? '+' : '') + '$' + fmt(gross);
+  if (g('bFee'))   g('bFee').textContent   = '-$' + fmt(fees, 4);
+  if (g('bNet'))   { g('bNet').textContent = netStr; g('bNet').className = net >= 0 ? 'bsv pg' : 'bsv prr'; }
+
+  // ── Відкриті угоди ───────────────────────────────────────────
   var openCount = 0;
-  if (data.open_trades) openCount = Array.isArray(data.open_trades) ? data.open_trades.length : parseInt(data.open_trades)||0;
-  else if (data.open_count !== undefined) openCount = parseInt(data.open_count)||0;
-  g('bOpen').textContent = openCount;
-  // Лічильник угод (УГОД: X)
-  var totalCount = parseInt(data.total||0);
-  if (g('statTrades')) g('statTrades').textContent = totalCount;
-  if (g('mStatT'))     g('mStatT').textContent = totalCount;
-  // Winrate
-  var wrVal = parseFloat(data.winrate||0);
-  if (g('statWR')) { g('statWR').textContent = wrVal ? wrVal.toFixed(1)+'%' : '—'; }
-  if (g('mStatW')) { g('mStatW').textContent = wrVal ? wrVal.toFixed(1)+'%' : '—'; }
+  if (Array.isArray(data.open_trades))        openCount = data.open_trades.length;
+  else if (data.open_count !== undefined)     openCount = parseInt(data.open_count) || 0;
+  if (g('bOpen')) g('bOpen').textContent = openCount;
+
+  // ── Оновити баланс глобально ──────────────────────────────────
+  if (bal > 0) balance = bal;
 }
 
 function localUpdateStats() {
@@ -1497,13 +1527,23 @@ function localUpdateStats() {
 }
 
 function updateMLStats() {
-  const pct = Math.min(100, mlTradesN/mlTarget*100);
-  g('mlN').textContent = `${mlTradesN}/${mlTarget}`;
-  g('mlBar').style.width = pct+'%';
-  g('mlAcc').textContent = mlAccuracy ? (mlAccuracy*100).toFixed(1)+'%' : '—';
-  g('mlStatus').textContent = mlTradesN < mlTarget
-    ? `Збір даних (ще ${mlTarget-mlTradesN})`
-    : mlAccuracy ? 'Модель активна' : 'Готовий до навчання';
+  var pct = Math.min(100, mlTradesN / mlTarget * 100);
+  if (g('mlN'))   g('mlN').textContent  = mlTradesN + '/' + mlTarget;
+  if (g('mlBar')) g('mlBar').style.width = pct + '%';
+  // Точність: показуємо реальну якщо є, або '—'
+  if (g('mlAcc')) g('mlAcc').textContent = mlAccuracy ? (mlAccuracy * 100).toFixed(1) + '%' : '—';
+  // ML Win% — з останнього ml_result
+  if (g('i_ml'))  g('i_ml').textContent  = mlLastWinProb ? (mlLastWinProb * 100).toFixed(1) + '%' : '—';
+  if (g('mi_ml')) g('mi_ml').textContent = mlLastWinProb ? (mlLastWinProb * 100).toFixed(1) + '%' : '—';
+  if (g('mlStatus')) {
+    if (mlTradesN < mlTarget) {
+      g('mlStatus').textContent = 'Збір даних (ще ' + (mlTarget - mlTradesN) + ')';
+    } else if (mlAccuracy) {
+      g('mlStatus').textContent = 'Модель активна (' + (mlAccuracy*100).toFixed(0) + '%)';
+    } else {
+      g('mlStatus').textContent = 'Готовий до навчання';
+    }
+  }
 }
 
 function updateModeUI(mode) {
@@ -1811,6 +1851,14 @@ addLog('warn','Для старту: pip install -r requirements.txt && python se
   if (s.tg_token)  addLog('ok', '✅ Telegram налаштовано');
   if (s.api_key)   addLog('ok', '✅ Binance API збережено');
   if (savedUrl && savedKey) setTimeout(connectWS, 1000);
+
+// ── Keep-alive: пінгує сервер кожні 4 хв щоб Railway не засинав ─
+setInterval(function() {
+  var rawUrl = localStorage.getItem('nt_server_url') || '';
+  if (!rawUrl) return;
+  var apiUrl = rawUrl.replace('wss://','https://').replace('ws://','http://').replace('/ws','');
+  fetch(apiUrl + '/health').catch(function(){});
+}, 240000);
 })();
 </script>
 </body>
