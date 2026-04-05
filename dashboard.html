@@ -151,8 +151,11 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 .pchg{font-family:'Share Tech Mono',monospace;font-size:12px;padding:3px 8px;border-radius:5px;margin-bottom:2px}
 .pchg.up{background:rgba(0,255,136,.1);color:var(--grn);border:1px solid rgba(0,255,136,.2)}
 .pchg.dn{background:rgba(255,62,108,.1);color:var(--red);border:1px solid rgba(255,62,108,.2)}
-canvas#ch{width:100%;height:150px;display:block}
-@media(min-width:600px){canvas#ch{height:190px}}
+canvas#ch{width:100%;height:220px;display:block;cursor:crosshair}
+@media(min-width:600px){canvas#ch{height:280px}}
+@media(min-width:900px){canvas#ch{height:300px}}
+.chart-info{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--mut);height:18px;padding:0 14px 4px;display:flex;gap:12px;flex-wrap:wrap;background:var(--panel)}
+.chart-info span{color:var(--txt)}.chart-info .g{color:var(--grn)}.chart-info .r{color:var(--red)}
 
 /* SIGNAL BAR */
 .sigbar{background:var(--panel);border-top:1px solid var(--brd);border-bottom:1px solid var(--brd);padding:7px 14px;display:flex;align-items:center;gap:7px;overflow-x:auto;scrollbar-width:none;flex-shrink:0}
@@ -176,6 +179,9 @@ tr.nr{animation:ra .5s ease}
 .badge.sell{background:rgba(255,62,108,.12);color:var(--red);border:1px solid rgba(255,62,108,.25)}
 .badge.open{background:rgba(0,255,231,.1);color:var(--acc);border:1px solid rgba(0,255,231,.25)}
 .badge.tp{background:rgba(0,255,136,.08);color:var(--grn);border:1px solid rgba(0,255,136,.2)}
+.badge.open{background:rgba(0,255,231,.08);color:var(--acc);border:1px solid rgba(0,255,231,.25)}
+.open-row{background:rgba(0,255,231,.015)!important}
+.open-row:hover{background:rgba(0,255,231,.03)!important}
 .badge.sl{background:rgba(255,62,108,.08);color:var(--red);border:1px solid rgba(255,62,108,.2)}
 .badge.demo{background:rgba(245,197,24,.08);color:var(--yel);border:1px solid rgba(245,197,24,.2);font-size:8px}
 .badge.live2{background:rgba(0,255,136,.06);color:var(--grn);border:1px solid rgba(0,255,136,.15);font-size:8px}
@@ -420,6 +426,14 @@ tr.nr{animation:ra .5s ease}
       </div>
       <canvas id="ch"></canvas>
     </div>
+    <div class="chart-info" id="chartInfo">
+      <span id="ciO">O: —</span>
+      <span id="ciH">H: —</span>
+      <span id="ciL">L: —</span>
+      <span id="ciC">C: —</span>
+      <span id="ciV">V: —</span>
+      <span id="ciChg"></span>
+    </div>
     <div class="sigbar" id="sigBar">
       <div class="sc b" id="sig_ma">▲ MA Cross</div>
       <div class="sc n" id="sig_rsi">◆ RSI 58.2</div>
@@ -433,8 +447,8 @@ tr.nr{animation:ra .5s ease}
       <table>
         <thead><tr>
           <th>#</th><th>ЧАС</th><th>ПАРА</th><th>БІК</th>
-          <th>ЦІНА</th><th>FEE</th><th>NET P&L</th>
-          <th>СТАТ</th><th>РЕЖИМ</th>
+          <th>ЦІНА</th><th>СУМА</th><th>SL</th><th>TP</th><th>FEE</th><th>NET P&L</th>
+          <th>СТАТ</th>
         </tr></thead>
         <tbody id="tradesBody"></tbody>
       </table>
@@ -566,11 +580,13 @@ const PRICES = {
   'SOL/USDT':{p:148.5,b:148.5},'BNB/USDT':{p:592,b:592}
 };
 let curPair = 'BTC/USDT';
-let curTF = '1h';
-let mlTarget = 100; // читається з конфігу сервера
+let curTF   = '1h';
+let mlTarget = 100;
+let chartView = {offset: 0, count: 100}; // zoom/scroll стан
+let crosshair = {x: -1, y: -1};          // позиція кросхера // читається з конфігу сервера
 let balance = 1000, sBal = 1000;
 let grossPnl = 0, totalFees = 0, wins = 0, loss = 0;
-let trades = [], hist = [], mkrs = [], logs = [];
+let trades = [], hist = [], mkrs = [], logs = [], candles = [];
 let tradeId = 0, mlTradesN = 0, mlAccuracy = null;
 
 // ════════════════════════════════════════════════════════════
@@ -697,6 +713,12 @@ function handleServerMsg(msg) {
     case 'trade_opened':
       addLog('ok', `⚡ #${msg.trade_id} ${msg.side} ${msg.pair} @ $${fmt(msg.price)} [$${fmt(msg.amount)}]`);
       showToast(`${msg.side === 'BUY' ? '🟢' : '🔴'} ${msg.side} ${msg.pair} @ $${fmt(msg.price)}`);
+      // Додаємо маркер угоди на графік
+      if (msg.pair === curPair) {
+        mkrs.push({i: Math.max(0, hist.length - 1), s: msg.side, price: msg.price || 0});
+        if (mkrs.length > 15) mkrs.shift();
+        draw();
+      }
       fetchTrades();
       break;
 
@@ -773,6 +795,13 @@ function startBinanceWS(pair) {
           updatePriceDisplay(price);
           hist.push(price);
           if (hist.length > 120) hist.shift();
+          // Оновлюємо останню свічку реальною ціною
+          if (candles.length > 0) {
+            const last = candles[candles.length - 1];
+            last.c = price;
+            last.h = Math.max(last.h, price);
+            last.l = Math.min(last.l, price);
+          }
           mkrs = mkrs.map(m => ({...m, i: m.i - 1}));
           draw();
         }
@@ -813,6 +842,74 @@ function rsz() {
 }
 window.addEventListener('resize', () => { rsz(); draw(); });
 
+// Кросхер
+cv.addEventListener('mousemove', e => {
+  const r = cv.getBoundingClientRect();
+  crosshair.x = (e.clientX - r.left) * cv.width  / cv.offsetWidth  / devicePixelRatio;
+  crosshair.y = (e.clientY - r.top)  * cv.height / cv.offsetHeight / devicePixelRatio;
+
+  // Оновити OHLC інфо
+  const PRICE_SCALE = 62;
+  const chartW = cv.offsetWidth - PRICE_SCALE;
+  if (crosshair.x < chartW && candles.length > 0) {
+    const i    = Math.floor(crosshair.x / chartW * chartView.count);
+    const idx  = Math.floor(chartView.offset) + i;
+    const d    = candles[Math.min(idx, candles.length-1)];
+    if (d) {
+      const chg = d.o > 0 ? ((d.c - d.o) / d.o * 100).toFixed(2) : 0;
+      const bull = d.c >= d.o;
+      const g = (id, v) => { const el = document.getElementById(id); if(el) el.textContent = v; };
+      g('ciO', 'O: $' + d.o.toLocaleString('en',{maximumFractionDigits:2}));
+      g('ciH', 'H: $' + d.h.toLocaleString('en',{maximumFractionDigits:2}));
+      g('ciL', 'L: $' + d.l.toLocaleString('en',{maximumFractionDigits:2}));
+      g('ciC', 'C: $' + d.c.toLocaleString('en',{maximumFractionDigits:2}));
+      g('ciV', 'V: ' + (d.v||0).toLocaleString('en',{maximumFractionDigits:0}));
+      const ce = document.getElementById('ciChg');
+      if(ce){ce.textContent=(bull?'+':'')+chg+'%';ce.className=bull?'g':'r';}
+    }
+  }
+  draw();
+});
+
+cv.addEventListener('mouseleave', () => {
+  crosshair = {x: -1, y: -1};
+  draw();
+});
+
+// Zoom колесом миші
+cv.addEventListener('wheel', e => {
+  e.preventDefault();
+  const delta   = e.deltaY > 0 ? 1.15 : 0.87;
+  const newCount = Math.max(20, Math.min(candles.length, chartView.count * delta));
+  const PRICE_SCALE = 62;
+  const mx      = (e.clientX - cv.getBoundingClientRect().left) / (cv.offsetWidth - PRICE_SCALE);
+  const anchor  = chartView.offset + mx * chartView.count;
+  chartView.offset = Math.max(0, Math.min(
+    candles.length - newCount,
+    anchor - mx * newCount
+  ));
+  chartView.count  = newCount;
+  draw();
+}, {passive: false});
+
+// Drag для pan
+let dragStart = null;
+cv.addEventListener('mousedown', e => {
+  dragStart = {x: e.clientX, offset: chartView.offset};
+});
+cv.addEventListener('mousemove', e => {
+  if (!dragStart || e.buttons !== 1) { dragStart = null; return; }
+  const PRICE_SCALE = 62;
+  const dx    = e.clientX - dragStart.x;
+  const dpx   = dx / ((cv.offsetWidth - PRICE_SCALE) / chartView.count);
+  chartView.offset = Math.max(0, Math.min(
+    candles.length - chartView.count,
+    dragStart.offset - dpx
+  ));
+  draw();
+});
+cv.addEventListener('mouseup', () => { dragStart = null; });
+
 function initHist() {
   hist = []; let p = PRICES[curPair].p;
   for (let i = 0; i < 80; i++) { p += (Math.random()-.5)*p*.004; hist.push(p); }
@@ -822,43 +919,284 @@ function initHist() {
 function draw() {
   if (!cv.offsetWidth) return; rsz();
   const W = cv.offsetWidth, H = cv.offsetHeight;
-  cx.clearRect(0,0,W,H);
-  if (hist.length < 2) return;
-  const mn = Math.min(...hist)*.999, mx = Math.max(...hist)*1.001, rng = mx-mn;
-  const tx = i => (i/(hist.length-1))*W;
-  const ty = v => H - ((v-mn)/rng)*H*.82 - H*.1;
-  cx.strokeStyle='rgba(13,42,48,.7)'; cx.lineWidth=1;
-  for (let i=0;i<=3;i++) {
-    const y = H*.1+(H*.82/3)*i;
-    cx.beginPath(); cx.setLineDash([3,7]); cx.moveTo(0,y); cx.lineTo(W,y); cx.stroke();
-    cx.fillStyle='rgba(58,102,112,.5)';
-    cx.font=`${Math.max(9,W*.011)}px Share Tech Mono`;
-    cx.fillText('$'+(mx-(rng*i/3)).toLocaleString('en',{maximumFractionDigits:0}),4,y-3);
+  cx.clearRect(0, 0, W, H);
+
+  const data = (candles && candles.length >= 5) ? candles
+             : hist.map(c => ({o:c, h:c*1.0008, l:c*0.9992, c, v:0}));
+  if (data.length < 2) return;
+
+  // ── Розміри зон ──────────────────────────────────────────────
+  const PRICE_SCALE = 62;  // права шкала цін
+  const TIME_SCALE  = 22;  // нижня шкала часу
+  const VOL_H       = Math.floor(H * 0.18); // висота volume
+  const TOP         = 10;
+  const chartH      = H - TIME_SCALE - VOL_H - TOP;
+  const chartW      = W - PRICE_SCALE;
+
+  // ── Видимий діапазон (з урахуванням zoom/scroll) ─────────────
+  const vis   = chartView;
+  const start = Math.max(0, Math.floor(vis.offset));
+  const end   = Math.min(data.length, Math.ceil(vis.offset + vis.count));
+  const slice = data.slice(start, end);
+  if (slice.length < 2) return;
+
+  const highs = slice.map(d => d.h);
+  const lows  = slice.map(d => d.l);
+  const mn    = Math.min(...lows);
+  const mx    = Math.max(...highs);
+  const pad   = (mx - mn) * 0.08 || mn * 0.002;
+  const lo    = mn - pad, hi = mx + pad, priceRng = hi - lo;
+
+  const candleW = Math.max(1.5, (chartW / slice.length) * 0.82);
+  const tx = i => (i + 0.5) / slice.length * chartW;
+  const ty = v  => TOP + chartH - (v - lo) / priceRng * chartH;
+
+  // ── Фон сітки ─────────────────────────────────────────────────
+  cx.fillStyle = '#020608';
+  cx.fillRect(0, 0, W, H);
+
+  // ── Горизонтальна цінова сітка ────────────────────────────────
+  const priceSteps = 6;
+  cx.font = '9px Share Tech Mono';
+  for (let i = 0; i <= priceSteps; i++) {
+    const v = lo + (priceRng * i / priceSteps);
+    const y = ty(v);
+    if (y < TOP - 5 || y > TOP + chartH + 5) continue;
+
+    // Лінія
+    cx.setLineDash([1, 5]);
+    cx.strokeStyle = 'rgba(13,42,48,.8)';
+    cx.lineWidth   = 0.5;
+    cx.beginPath(); cx.moveTo(0, y); cx.lineTo(chartW, y); cx.stroke();
+    cx.setLineDash([]);
+
+    // Ціна на правій шкалі
+    const label = v >= 1000
+      ? '$' + v.toLocaleString('en', {maximumFractionDigits: 0})
+      : '$' + v.toFixed(2);
+    cx.fillStyle   = 'rgba(58,102,112,.8)';
+    cx.fillRect(chartW + 1, y - 9, PRICE_SCALE - 2, 16);
+    cx.fillStyle   = 'rgba(100,160,170,.9)';
+    cx.fillText(label, chartW + 4, y + 3);
   }
-  cx.setLineDash([]);
-  const gr = cx.createLinearGradient(0,0,0,H);
-  gr.addColorStop(0,'rgba(0,255,231,.1)'); gr.addColorStop(1,'rgba(0,255,231,0)');
-  cx.beginPath(); cx.moveTo(tx(0),H);
-  hist.forEach((v,i)=>cx.lineTo(tx(i),ty(v)));
-  cx.lineTo(tx(hist.length-1),H); cx.closePath(); cx.fillStyle=gr; cx.fill();
-  cx.beginPath(); cx.strokeStyle='#00ffe7'; cx.lineWidth=1.5;
-  cx.shadowBlur=8; cx.shadowColor='rgba(0,255,231,.35)';
-  hist.forEach((v,i)=>i===0?cx.moveTo(tx(i),ty(v)):cx.lineTo(tx(i),ty(v)));
-  cx.stroke(); cx.shadowBlur=0;
-  mkrs.forEach(m=>{
-    if(m.i<0||m.i>=hist.length)return;
-    const x=tx(m.i), y=ty(hist[m.i]);
-    cx.beginPath(); cx.arc(x,y,4,0,Math.PI*2);
-    cx.fillStyle=m.s==='BUY'?'rgba(0,255,136,.9)':'rgba(255,62,108,.9)';
-    cx.fill(); cx.strokeStyle='#020608'; cx.lineWidth=1.5; cx.stroke();
-    cx.fillStyle=m.s==='BUY'?'#00ff88':'#ff3e6c';
-    cx.font='bold 9px Share Tech Mono';
-    cx.fillText(m.s==='BUY'?'▲':'▼',x-4,y-7);
+
+  // ── Вертикальна часова сітка ──────────────────────────────────
+  const timeStep = Math.max(1, Math.floor(slice.length / 6));
+  for (let i = 0; i < slice.length; i += timeStep) {
+    const x = tx(i);
+    cx.setLineDash([1, 5]);
+    cx.strokeStyle = 'rgba(13,42,48,.6)';
+    cx.lineWidth   = 0.5;
+    cx.beginPath(); cx.moveTo(x, TOP); cx.lineTo(x, TOP + chartH + VOL_H); cx.stroke();
+    cx.setLineDash([]);
+  }
+
+  // ── Volume зона (фон) ─────────────────────────────────────────
+  const volTop = TOP + chartH + 2;
+  cx.fillStyle = 'rgba(6,13,16,.6)';
+  cx.fillRect(0, volTop, chartW, VOL_H - 2);
+
+  // Volume бари
+  const maxVol = Math.max(...slice.map(d => d.v || 0), 1);
+  slice.forEach((d, i) => {
+    if (!d.v) return;
+    const x    = tx(i);
+    const bull = d.c >= d.o;
+    const vh   = (d.v / maxVol) * (VOL_H - 6);
+    cx.fillStyle = bull ? 'rgba(0,255,136,.22)' : 'rgba(255,62,108,.22)';
+    cx.fillRect(x - candleW/2, volTop + (VOL_H - vh - 6), candleW, vh);
   });
-  const ly = ty(hist[hist.length-1]);
-  cx.beginPath(); cx.strokeStyle='rgba(0,255,231,.2)'; cx.lineWidth=1; cx.setLineDash([4,6]);
-  cx.moveTo(0,ly); cx.lineTo(W,ly); cx.stroke(); cx.setLineDash([]);
+
+  // ── MA лінії ─────────────────────────────────────────────────
+  function drawMA(period, color, label) {
+    const allCloses = data.map(d => d.c);
+    const maVals = [];
+    for (let i = start; i < end; i++) {
+      if (i < period - 1) { maVals.push(null); continue; }
+      const sum = allCloses.slice(i - period + 1, i + 1).reduce((a,b)=>a+b,0);
+      maVals.push(sum / period);
+    }
+    cx.beginPath();
+    cx.strokeStyle = color;
+    cx.lineWidth   = 1.2;
+    cx.setLineDash([]);
+    let first = true;
+    maVals.forEach((v, i) => {
+      if (v === null) return;
+      const x = tx(i), y = ty(v);
+      if (y < TOP || y > TOP + chartH) return;
+      first ? cx.moveTo(x, y) : cx.lineTo(x, y);
+      first = false;
+    });
+    cx.stroke();
+    // Мітка
+    const lastMA = maVals.filter(v=>v!==null).pop();
+    if (lastMA) {
+      const y = ty(lastMA);
+      cx.fillStyle = color;
+      cx.font = '9px Share Tech Mono';
+      cx.fillText(`MA${period}`, chartW - 28, Math.max(TOP+8, Math.min(TOP+chartH-4, y-3)));
+    }
+  }
+  drawMA(20, 'rgba(255,199,0,.7)',  'MA20');
+  drawMA(50, 'rgba(255,100,180,.6)', 'MA50');
+
+  // ── Свічки ────────────────────────────────────────────────────
+  slice.forEach((d, i) => {
+    const x    = tx(i);
+    const bull = d.c >= d.o;
+    const yO   = ty(d.o), yC = ty(d.c);
+    const yH   = ty(d.h), yL = ty(d.l);
+    const bH   = Math.max(2, Math.abs(yC - yO));
+    const bY   = Math.min(yO, yC);
+
+    const bullColor  = '#0cbc8b';
+    const bearColor  = '#e03030';
+    const bullBorder = '#0fdf9f';
+    const bearBorder = '#ff4040';
+
+    // Тінь (wick)
+    cx.strokeStyle = bull ? bullColor : bearColor;
+    cx.lineWidth   = Math.max(0.8, candleW * 0.1);
+    cx.beginPath(); cx.moveTo(x, yH); cx.lineTo(x, yL); cx.stroke();
+
+    // Тіло свічки
+    if (candleW <= 3) {
+      // Тонкі свічки — лінії
+      cx.strokeStyle = bull ? bullBorder : bearBorder;
+      cx.lineWidth   = Math.max(1, candleW * 0.8);
+      cx.beginPath(); cx.moveTo(x, bY); cx.lineTo(x, bY + bH); cx.stroke();
+    } else {
+      cx.fillStyle   = bull ? bullColor : bearColor;
+      cx.strokeStyle = bull ? bullBorder : bearBorder;
+      cx.lineWidth   = 0.8;
+      cx.fillRect(x - candleW/2, bY, candleW, bH);
+      cx.strokeRect(x - candleW/2, bY, candleW, bH);
+    }
+  });
+
+  // ── Поточна ціна ─────────────────────────────────────────────
+  const lastD = data[data.length - 1];
+  const lastP = lastD.c;
+  const prevP = data.length > 1 ? data[data.length - 2].c : lastP;
+  const bull  = lastP >= prevP;
+  const lCol  = bull ? '#0fdf9f' : '#ff4040';
+  const ly    = ty(lastP);
+
+  if (ly >= TOP && ly <= TOP + chartH) {
+    // Пунктирна лінія
+    cx.setLineDash([4, 4]);
+    cx.strokeStyle = lCol + '88';
+    cx.lineWidth   = 1;
+    cx.beginPath(); cx.moveTo(0, ly); cx.lineTo(chartW, ly); cx.stroke();
+    cx.setLineDash([]);
+
+    // Бейдж ціни
+    const priceStr = '$' + lastP.toLocaleString('en', {minimumFractionDigits:2, maximumFractionDigits:2});
+    cx.font = 'bold 10px Share Tech Mono';
+    const lblW = cx.measureText(priceStr).width + 12;
+    cx.fillStyle   = lCol;
+    cx.fillRect(chartW + 1, ly - 9, PRICE_SCALE - 2, 18);
+    cx.fillStyle   = '#020608';
+    cx.fillText(priceStr, chartW + 6, ly + 3);
+  }
+
+  // ── Часова шкала внизу ───────────────────────────────────────
+  cx.fillStyle = 'rgba(6,13,16,.8)';
+  cx.fillRect(0, H - TIME_SCALE, W, TIME_SCALE);
+  cx.font = '9px Share Tech Mono';
+  cx.fillStyle = 'rgba(58,102,112,.8)';
+  for (let i = 0; i < slice.length; i += timeStep) {
+    const x = tx(i);
+    const idx2 = start + i;
+    let label = '';
+    if (slice[i] && slice[i].ts) {
+      const d = new Date(slice[i].ts);
+      label = d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
+    } else {
+      label = `${idx2}`;
+    }
+    cx.fillText(label, x - 14, H - TIME_SCALE + 14);
+  }
+
+  // ── Маркери угод ─────────────────────────────────────────────
+  mkrs.forEach(m => {
+    const absIdx = m.i;
+    const relIdx = absIdx - start;
+    if (relIdx < 0 || relIdx >= slice.length) return;
+
+    const x   = tx(relIdx);
+    const d   = slice[relIdx];
+    const buy = m.s === 'BUY';
+    const col = buy ? '#00ff88' : '#ff3e6c';
+
+    // Вертикальна лінія
+    cx.setLineDash([2, 4]);
+    cx.strokeStyle = col + '55';
+    cx.lineWidth   = 1;
+    cx.beginPath(); cx.moveTo(x, TOP); cx.lineTo(x, TOP + chartH); cx.stroke();
+    cx.setLineDash([]);
+
+    // Стрілка
+    const aY   = buy ? ty(d.l) + 18 : ty(d.h) - 18;
+    const aSz  = Math.max(6, candleW * 1.3);
+    cx.fillStyle  = col;
+    cx.shadowBlur = 12; cx.shadowColor = col;
+    cx.beginPath();
+    if (buy) {
+      cx.moveTo(x, aY - aSz*1.2);
+      cx.lineTo(x - aSz, aY + aSz*0.3);
+      cx.lineTo(x + aSz, aY + aSz*0.3);
+    } else {
+      cx.moveTo(x, aY + aSz*1.2);
+      cx.lineTo(x - aSz, aY - aSz*0.3);
+      cx.lineTo(x + aSz, aY - aSz*0.3);
+    }
+    cx.closePath(); cx.fill();
+    cx.shadowBlur = 0;
+
+    // Підпис з ціною
+    const lbl = `${buy?'▲':'▼'} ${m.s}${m.price?' $'+Math.round(m.price/100)*100:''}`;
+    cx.font = 'bold 9px Share Tech Mono';
+    const lw = cx.measureText(lbl).width + 8;
+    const lx = Math.min(chartW - lw - 2, Math.max(2, x - lw/2));
+    const lblY2 = buy ? aY + aSz + 16 : aY - aSz - 5;
+    if (lblY2 > TOP && lblY2 < TOP + chartH) {
+      cx.fillStyle = buy ? 'rgba(0,255,136,.15)' : 'rgba(255,62,108,.15)';
+      cx.fillRect(lx - 4, lblY2 - 11, lw + 4, 14);
+      cx.fillStyle = col;
+      cx.fillText(lbl, lx, lblY2);
+    }
+  });
+
+  // ── Кросхер ──────────────────────────────────────────────────
+  if (crosshair.x > 0 && crosshair.x < chartW) {
+    cx.setLineDash([3, 4]);
+    cx.strokeStyle = 'rgba(100,160,170,.4)';
+    cx.lineWidth   = 0.8;
+    cx.beginPath(); cx.moveTo(crosshair.x, TOP); cx.lineTo(crosshair.x, TOP + chartH); cx.stroke();
+    cx.beginPath(); cx.moveTo(0, crosshair.y); cx.lineTo(chartW, crosshair.y); cx.stroke();
+    cx.setLineDash([]);
+
+    // Ціна на осі
+    const cprice = lo + (1 - (crosshair.y - TOP) / chartH) * priceRng;
+    if (cprice > 0) {
+      const cStr = '$' + cprice.toLocaleString('en', {maximumFractionDigits:2});
+      cx.font = '9px Share Tech Mono';
+      cx.fillStyle = 'rgba(0,255,231,.9)';
+      cx.fillRect(chartW + 1, crosshair.y - 9, PRICE_SCALE - 2, 16);
+      cx.fillStyle = '#020608';
+      cx.fillText(cStr, chartW + 4, crosshair.y + 3);
+    }
+  }
+
+  // ── Правий бордер шкали ───────────────────────────────────────
+  cx.fillStyle = 'rgba(13,42,48,.9)';
+  cx.fillRect(chartW, 0, 1, H);
+  cx.fillStyle = 'rgba(6,13,16,.95)';
+  cx.fillRect(chartW + 1, 0, PRICE_SCALE, H - TIME_SCALE);
 }
+
 
 // ════════════════════════════════════════════════════════════
 //  LOCAL SIM TICK (коли сервер не підключений)
@@ -923,7 +1261,7 @@ function localExecTrade(side, price, conf) {
     status: net>0?'TP':'SL', mode: 'demo',
   };
   trades.unshift(t);
-  mkrs.push({i:hist.length-1, s:side});
+  mkrs.push({i:hist.length-1, s:side, price:price||0});
   if(mkrs.length>10)mkrs.shift();
 
   renderTrades(trades.slice(0,20));
@@ -999,22 +1337,65 @@ function fgClass(fg) {
 
 function renderTrades(list, prepend=false) {
   const tbody = g('tradesBody');
-  const rows = list.slice(0,25).map((t,i)=>`
-    <tr class="${i===0&&prepend?'nr':''}">
-      <td style="color:var(--mut)">${t.id||'—'}</td>
-      <td style="color:var(--mut)">${t.ts_open||t.time||'—'}</td>
-      <td style="color:var(--acc)">${t.pair}</td>
-      <td><span class="badge ${(t.side||'').toLowerCase()}">${t.side}</span></td>
-      <td>$${fmt(t.entry_price||t.price||0)}</td>
-      <td class="py">-$${fmt(t.fee_usd||t.fee||0,4)}</td>
-      <td class="${(t.net_pnl||t.net||0)>=0?'pg':'prr'}" style="font-weight:700">
-        ${(t.net_pnl||t.net||0)>=0?'+':''}$${fmt(t.net_pnl||t.net||0)}
-      </td>
-      <td><span class="badge ${(t.status||'').toLowerCase()}">${t.status||'—'}</span></td>
-      <td><span class="badge ${t.mode==='live'?'live2':'demo'}">${t.mode||'demo'}</span></td>
-    </tr>`).join('');
-  tbody.innerHTML = rows;
+  if (!tbody || !list) return;
+  tbody.innerHTML = list.slice(0,25).map(function(t, i) {
+    const entry  = t.entry_price || t.price || 0;
+    const amt    = t.amount_usd  || t.amt   || 0;
+    const sl     = t.sl_price    || 0;
+    const tp     = t.tp_price    || 0;
+    const fee    = t.fee_usd     || t.fee   || 0;
+    const net    = t.net_pnl     || t.net   || 0;
+    const status = (t.status     || 'OPEN').toUpperCase();
+    const side   = (t.side       || '').toLowerCase();
+
+    // Live P&L для відкритих угод
+    var pnlStr = '';
+    if (status === 'OPEN') {
+      var curP    = (PRICES[t.pair] && PRICES[t.pair].p) ? PRICES[t.pair].p : entry;
+      var livePnl = side === 'buy'
+        ? (curP - entry) / entry * amt
+        : (entry - curP) / entry * amt;
+      var lpNet    = livePnl - fee;
+      var lpClass  = lpNet >= 0 ? 'pg' : 'prr';
+      pnlStr = '<span class="' + lpClass + '" style="font-weight:700">' +
+               (lpNet >= 0 ? '+' : '') + '$' + fmt(lpNet) +
+               '</span><span style="font-size:9px;color:var(--mut)"> live</span>';
+    } else {
+      var nc = net >= 0 ? 'pg' : 'prr';
+      pnlStr = '<span class="' + nc + '" style="font-weight:700">' +
+               (net >= 0 ? '+' : '') + '$' + fmt(net) + '</span>';
+    }
+
+    // Короткий час
+    var tsRaw   = t.ts_open || t.time || '';
+    var tsShort = tsRaw.indexOf('T') >= 0
+      ? tsRaw.split('T')[1].substring(0, 8)
+      : tsRaw.substring(0, 8);
+
+    // SL/TP з відсотком
+    var slPct = (sl && entry) ? ((sl - entry) / entry * 100).toFixed(1) : null;
+    var tpPct = (tp && entry) ? ((tp - entry) / entry * 100).toFixed(1) : null;
+    var slStr = sl ? ('$' + fmt(sl) + (slPct ? ' (' + slPct + '%)' : '')) : '—';
+    var tpStr = tp ? ('$' + fmt(tp) + (tpPct ? ' (' + tpPct + '%)' : '')) : '—';
+
+    var rowCls = (i === 0 && prepend ? 'nr ' : '') + (status === 'OPEN' ? 'open-row' : '');
+    var html = '<tr class="' + rowCls + '">';
+    html += '<td style="color:var(--mut);font-size:9px">' + (t.id || '—') + '</td>';
+    html += '<td style="color:var(--mut);font-size:9px">' + tsShort + '</td>';
+    html += '<td style="color:var(--acc)"><b>' + (t.pair || '') + '</b></td>';
+    html += '<td><span class="badge ' + side + '">' + (t.side || '') + '</span></td>';
+    html += '<td style="font-family:monospace;font-size:10px">$' + fmt(entry) + '</td>';
+    html += '<td class="py" style="font-weight:700">$' + fmt(amt, 0) + '</td>';
+    html += '<td style="color:var(--red);font-size:9px">' + slStr + '</td>';
+    html += '<td style="color:var(--grn);font-size:9px">' + tpStr + '</td>';
+    html += '<td class="py" style="font-size:9px">-$' + fmt(fee, 4) + '</td>';
+    html += '<td>' + pnlStr + '</td>';
+    html += '<td><span class="badge ' + status.toLowerCase() + '">' + status + '</span></td>';
+    html += '</tr>';
+    return html;
+  }).join('');
 }
+
 
 function updateStats(data) {
   const net   = parseFloat(data.net_pnl||0);
@@ -1239,32 +1620,68 @@ function setConnState(state, label) {
 //  TIMEFRAME — завантаження свічок з Binance
 // ════════════════════════════════════════════════════════════
 
-async function fetchKlines(pair, tf, limit = 100) {
+async function fetchKlines(pair, tf, limit = 120) {
   const sym = pair.replace('/', '');
   const bar = document.getElementById('loadingBar');
-  if (bar) { bar.style.width = '30%'; bar.style.background = 'var(--acc)'; }
-  try {
-    const r = await fetch(
-      `https://api.binance.com/api/v3/klines?symbol=${sym}&interval=${tf}&limit=${limit}`,
-      { signal: AbortSignal.timeout(8000) }
-    );
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const data = await r.json();
-    if (bar) bar.style.width = '80%';
-    // Беремо ціни закриття свічок
-    const closes = data.map(k => parseFloat(k[4]));
-    if (closes.length > 0) {
-      hist = closes;
-      mkrs = mkrs.filter(m => m.i >= 0 && m.i < hist.length);
-      if (bar) { bar.style.width = '100%'; setTimeout(()=>{ bar.style.width='0%'; }, 500); }
-      draw();
-      addLog('ok', `📊 ${pair} ${tf}: ${closes.length} свічок завантажено`);
-      return true;
+  if (bar) { bar.style.width = '20%'; bar.style.background = 'var(--acc)'; }
+
+  // Спробуємо Bybit (не блокується)
+  const tfMap   = {'1m':'1','5m':'5','15m':'15','1h':'60','4h':'240','1d':'D'};
+  const tfBybit = tfMap[tf] || '60';
+  const tfBinance = tf;
+
+  const sources = [
+    `https://api.bybit.com/v5/market/kline?category=spot&symbol=${sym}&interval=${tfBybit}&limit=${limit}`,
+    `https://api.binance.com/api/v3/klines?symbol=${sym}&interval=${tfBinance}&limit=${limit}`,
+  ];
+
+  for (const url of sources) {
+    try {
+      if (bar) bar.style.width = '40%';
+      const r = await fetch(url, { signal: AbortSignal.timeout(6000) });
+      if (!r.ok) continue;
+      const data = await r.json();
+      if (bar) bar.style.width = '75%';
+
+      let rawCandles = [];
+      if (url.includes('bybit')) {
+        const list = data?.result?.list;
+        if (!list || list.length < 10) continue;
+        // Bybit: [time, open, high, low, close, volume, turnover] — reversed
+        rawCandles = list.reverse().map(k => ({
+          ts: parseInt(k[0]),
+          o: parseFloat(k[1]), h: parseFloat(k[2]),
+          l: parseFloat(k[3]), c: parseFloat(k[4]),
+          v: parseFloat(k[5])
+        }));
+      } else {
+        if (!Array.isArray(data) || data.length < 10) continue;
+        // Binance: [time, open, high, low, close, volume, ...]
+        rawCandles = data.map(k => ({
+          ts: parseInt(k[0]),
+          o: parseFloat(k[1]), h: parseFloat(k[2]),
+          l: parseFloat(k[3]), c: parseFloat(k[4]),
+          v: parseFloat(k[5])
+        }));
+      }
+
+      if (rawCandles.length >= 10) {
+        candles = rawCandles;
+        hist    = candles.map(c => c.c);
+        mkrs    = mkrs.filter(m => m.i >= 0 && m.i < hist.length);
+        // Показуємо останні N свічок
+        chartView = {offset: Math.max(0, candles.length - 100), count: 100};
+        if (bar) { bar.style.width = '100%'; setTimeout(() => bar.style.width = '0%', 400); }
+        draw();
+        addLog('ok', `📊 ${pair} ${tf}: ${candles.length} свічок завантажено`);
+        return true;
+      }
+    } catch(e) {
+      // Спробуємо наступне джерело
     }
-  } catch(e) {
-    addLog('warn', `Klines ${pair} ${tf}: ${e.message}`);
-    if (bar) { bar.style.width = '0%'; bar.style.background = 'var(--red)'; }
   }
+  if (bar) { bar.style.width = '0%'; bar.style.background = 'var(--red)'; }
+  addLog('warn', `Klines ${pair} ${tf}: всі джерела недоступні`);
   return false;
 }
 
@@ -1272,7 +1689,7 @@ function selTF(tf, el) {
   curTF = tf;
   document.querySelectorAll('.tftab').forEach(t => t.classList.remove('on'));
   el.classList.add('on');
-  hist = []; mkrs = [];
+  hist = []; mkrs = []; candles = [];
   draw();
   fetchKlines(curPair, tf).then(ok => {
     if (!ok) initHist();
