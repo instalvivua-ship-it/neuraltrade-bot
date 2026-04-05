@@ -566,6 +566,9 @@ async def startup():
 
 def _scheduler():
     import schedule
+    import traceback
+
+    log.info("🕐 Scheduler thread запущено")
 
     interval = cfg.cycle_interval_minutes or 60
     schedule.every(interval).minutes.do(run_trading_cycle)
@@ -585,7 +588,12 @@ def _scheduler():
         )
 
     time.sleep(5)
-    run_trading_cycle()
+    log.info("🚀 Перший цикл запускається...")
+    try:
+        run_trading_cycle()
+    except Exception as e:
+        log.error(f"❌ Цикл ПОМИЛКА: {e}")
+        log.error(traceback.format_exc())
 
     while True:
         schedule.run_pending()
