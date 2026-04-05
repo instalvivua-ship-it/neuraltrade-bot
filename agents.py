@@ -91,11 +91,11 @@ class TechAnalystAgent:
             log.error(f"Binance init: {e}")
 
     def get_current_price(self, pair: str) -> Optional[float]:
-    # Кеш 5 секунд
-    if pair in self._price_cache:
-        p, ts = self._price_cache[pair]
-        if time.time() - ts < 5:
-            return p
+        # Кеш 5 секунд
+        if pair in self._price_cache:
+            p, ts = self._price_cache[pair]
+            if time.time() - ts < 5:
+                return p
 
     # Спочатку пробуємо Binance публічний REST (без API ключів)
     try:
