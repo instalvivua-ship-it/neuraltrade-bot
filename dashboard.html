@@ -618,6 +618,9 @@ function connectWS() {
       g('serverBar').style.display = 'none';
       addLog('ok', 'Python сервер підключено!');
       showToast('✅ Сервер підключено');
+      setTimeout(fetchTrades, 800);
+      // Завантажити угоди при підключенні
+      setTimeout(fetchTrades, 1000);
     };
 
     wsConn.onmessage = (e) => {
@@ -974,10 +977,11 @@ function draw() {
     const label = v >= 1000
       ? '$' + v.toLocaleString('en', {maximumFractionDigits: 0})
       : '$' + v.toFixed(2);
-    cx.fillStyle   = 'rgba(58,102,112,.8)';
-    cx.fillRect(chartW + 1, y - 9, PRICE_SCALE - 2, 16);
-    cx.fillStyle   = 'rgba(100,160,170,.9)';
-    cx.fillText(label, chartW + 4, y + 3);
+    cx.fillStyle = 'rgba(6,13,16,.95)';
+    cx.fillRect(chartW + 1, y - 8, PRICE_SCALE - 1, 16);
+    cx.fillStyle = 'rgba(180,220,230,1)';
+    cx.font = '9px Share Tech Mono';
+    cx.fillText(label, chartW + 5, y + 4);
   }
 
   // ── Вертикальна часова сітка ──────────────────────────────────
@@ -1095,10 +1099,19 @@ function draw() {
     const priceStr = '$' + lastP.toLocaleString('en', {minimumFractionDigits:2, maximumFractionDigits:2});
     cx.font = 'bold 10px Share Tech Mono';
     const lblW = cx.measureText(priceStr).width + 12;
-    cx.fillStyle   = lCol;
-    cx.fillRect(chartW + 1, ly - 9, PRICE_SCALE - 2, 18);
-    cx.fillStyle   = '#020608';
-    cx.fillText(priceStr, chartW + 6, ly + 3);
+    // Яскравий бейдж поточної ціни
+    cx.fillStyle = lCol;
+    cx.fillRect(chartW + 1, ly - 10, PRICE_SCALE - 1, 20);
+    cx.fillStyle = '#000';
+    cx.fillText(priceStr, chartW + 4, ly + 4);
+    // Маленький трикутник-вказівник
+    cx.beginPath();
+    cx.moveTo(chartW - 6, ly);
+    cx.lineTo(chartW + 1, ly - 5);
+    cx.lineTo(chartW + 1, ly + 5);
+    cx.closePath();
+    cx.fillStyle = lCol;
+    cx.fill();
   }
 
   // ── Часова шкала внизу ───────────────────────────────────────
