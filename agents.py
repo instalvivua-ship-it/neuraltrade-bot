@@ -91,25 +91,43 @@ class TechAnalystAgent:
             log.error(f"Binance init: {e}")
 
     def get_current_price(self, pair: str) -> Optional[float]:
-        # Кеш 5 секунд
-        if pair in self._price_cache:
-            p, ts = self._price_cache[pair]
-            if time.time() - ts < 5:
-                return p
-        if self._exchange:
-            try:
-                t = self._exchange.fetch_ticker(pair)
-                p = float(t["last"])
-                self._price_cache[pair] = (p, time.time())
-                return p
-            except Exception as e:
-                log.error(f"Ціна {pair}: {e}")
-        # Симуляція
-        import random
-        base = {"BTC/USDT":84000,"ETH/USDT":3200,"SOL/USDT":148,"BNB/USDT":590}.get(pair, 100)
-        p = base * (1 + random.gauss(0, 0.003))
-        self._price_cache[pair] = (p, time.time())
-        return p
+    # Кеш 5 секунд
+    if pair in self._price_cache:
+        p, ts = self._price_cache[pair]
+        if time.time() - ts < 5:
+            return p
+
+    # Спочатку пробуємо Binance публічний REST (без API ключів)
+    try:
+        sym = pair.replace("/", "")
+        r = requests.get(
+            f"https://api.binance.com/api/v3/ticker/price?symbol={sym}",
+            timeout=5
+        )
+        if r.status_code == 200:
+            p = float(r.json()["price"])
+            self._price_cache[pair] = (p, time.time())
+            return p
+    except Exception:
+        pass
+
+    # Fallback — ccxt
+    if self._exchange:
+        try:
+            t = self._exchange.fetch_ticker(pair)
+            p = float(t["last"])
+            self._price_cache[pair] = (p, time.time())
+            return p
+        except Exception as e:
+            log.error(f"Ціна {pair}: {e}")
+
+    # Остання резервна симуляція
+    import random
+    base = {"BTC/USDT":67000,"ETH/USDT":3200,
+            "SOL/USDT":148,"BNB/USDT":590}.get(pair, 100)
+    p = base * (1 + random.gauss(0, 0.001))
+    self._price_cache[pair] = (p, time.time())
+    return p
 
     def fetch_ohlcv(self, pair: str, limit: int = 200) -> Optional["pd.DataFrame"]:
         if self._exchange and HAS_TA:
