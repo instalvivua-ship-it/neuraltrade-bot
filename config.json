@@ -5,7 +5,7 @@
   "mode":       "demo",
 
   "pairs":     ["BTC/USDT", "ETH/USDT", "SOL/USDT"],
-  "timeframe": "1h",
+  "timeframe": "15m",
   "cycle_interval_minutes": 5,
 
   "min_confidence":    0.62,
