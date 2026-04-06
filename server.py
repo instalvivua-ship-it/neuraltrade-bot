@@ -376,7 +376,9 @@ async def _broadcaster():
 # ════════════════════════════════════════════════════════════════
 
 def run_trading_cycle():
+    log.info(f"▶️  Цикл {datetime.now().strftime('%H:%M:%S')} | paused={tg.is_paused} | pairs={cfg.pairs}")
     if tg.is_paused:
+        log.info("⏸ Торгівля на паузі")
         _queue_msg({"type":"agent_log","level":"warn",
                     "message":"⏸ Торгівля на паузі (Telegram /pause)"})
         return
@@ -479,6 +481,7 @@ def run_fast_cycle():
 
 
 def _run_pair(pair: str):
+    log.info(f"🔍 _run_pair({pair}) — аналіз...")
     _queue_msg({"type":"agent_log","level":"info",
                 "message":f"🔍 Аналіз {pair}..."})
 
@@ -738,9 +741,9 @@ def _scheduler():
             lambda: tg.daily_backup(db.path)
         )
 
-    # Перший запуск через 3 сек
-    time.sleep(3)
-    log.info("🚀 Перший цикл запускається...")
+    # Перший запуск через 10 сек (чекаємо ініціалізацію)
+    time.sleep(10)
+    log.info("🚀 Перший торговий цикл запускається...")
     try:
         run_trading_cycle()
     except Exception as e:

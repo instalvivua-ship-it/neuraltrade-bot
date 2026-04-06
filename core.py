@@ -84,6 +84,7 @@ class Config:
 
     def __init__(self, path: str = "config.json"):
         self._data = dict(self.DEFAULTS)
+        # 1. Завантажуємо config.json
         if os.path.exists(path):
             with open(path, "r", encoding="utf-8") as f:
                 raw = json.load(f)
@@ -93,7 +94,30 @@ class Config:
         else:
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(self.DEFAULTS, f, indent=2, ensure_ascii=False)
-            log.info("✅ Створено config.json")
+            log.info(f"✅ config.json створено: {path}")
+
+        # 2. ENV змінні Railway перезаписують config.json
+        #    Це головне джерело секретів (токени, ключі)
+        env_map = {
+            "TELEGRAM_TOKEN":    "telegram_token",
+            "TELEGRAM_CHAT_ID":  "telegram_chat_id",
+            "BINANCE_API_KEY":   "api_key",
+            "BINANCE_SECRET":    "api_secret",
+            "OPENAI_API_KEY":    "openai_api_key",
+            "ANTHROPIC_API_KEY": "anthropic_api_key",
+            "TRADING_MODE":      "mode",
+            "DB_PATH":           "db_path",
+        }
+        for env_key, cfg_key in env_map.items():
+            val = os.environ.get(env_key, "").strip()
+            if val:
+                self._data[cfg_key] = val
+                log.info(f"✅ ENV {env_key} → cfg.{cfg_key}")
+
+        log.info(f"🔧 Config: mode={self._data.get('mode')} "
+                 f"tg={'✅' if self._data.get('telegram_token') else '❌'} "
+                 f"db={self._data.get('db_path')}")
+
 
     def __getattr__(self, name):
         if name.startswith("_"):
