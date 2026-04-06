@@ -665,6 +665,26 @@ async def startup():
     asyncio.create_task(_agent_ticker())
     asyncio.create_task(_self_ping())
 
+    # ML завантаження
+    for pair in cfg.pairs:
+        blob = db.load_model(pair)
+        if blob:
+            ml.load(pair, blob)
+
+    # Telegram polling
+    if tg.enabled:
+        t_tg = threading.Thread(
+            target=tg.poll_commands, args=(db, cfg), daemon=True
+        )
+        t_tg.start()
+        log.info("📱 Telegram polling запущено")
+
+    # Торговий scheduler — запускаємо тут бо Railway не використовує __main__
+    t_sched = threading.Thread(target=_scheduler, daemon=True)
+    t_sched.start()
+    log.info(f"▶️  Scheduler запущено | mode={cfg.mode} | pairs={cfg.pairs}")
+    log.info("🚀 NeuralTrade AI запущено")
+
 
 async def _self_ping():
     """Самопінг кожні 4 хв — запобігає засинанню Railway."""
@@ -736,23 +756,12 @@ def _scheduler():
 
 
 if __name__ == "__main__":
-    # Telegram polling
-    if tg.enabled:
-        t_tg = threading.Thread(
-            target=tg.poll_commands, args=(db, cfg), daemon=True
-        )
-        t_tg.start()
-        log.info("📱 Telegram polling запущено")
-
-    # Trading scheduler
-    t_sched = threading.Thread(target=_scheduler, daemon=True)
-    t_sched.start()
-    log.info(f"▶️  Scheduler запущено | mode={cfg.mode} | pairs={cfg.pairs}")
-
+    # Локальний запуск: python server.py
+    # На Railway — startup() вище вже запустив scheduler
     port = int(os.environ.get("PORT", cfg.server_port or 8000))
     uvicorn.run(
         app,
         host="0.0.0.0",
         port=port,
-    log_level="warning",
-)
+        log_level="warning",
+    )
