@@ -595,12 +595,18 @@ def _run_pair(pair: str):
 
     if trade_id:
         _queue_msg({
-            "type":  "trade_opened",
-            "trade_id": trade_id,
-            "pair":  pair,
-            "side":  decision["action"],
-            "price": round(tech_s["price"], 2),
-            "amount": amount,
+            "type":       "trade_opened",
+            "trade_id":   trade_id,
+            "pair":       pair,
+            "side":       decision["action"],
+            "price":      round(tech_s["price"], 2),
+            "amount":     amount,
+            # Поля для дашборду (назви що очікує renderMobileTrades)
+            "amount_usd": amount,
+            "entry_price": round(tech_s["price"], 2),
+            "sl_price":   round(sl, 2) if sl else None,
+            "tp_price":   round(tp, 2) if tp else None,
+            "fee_usd":    round(amount * (cfg.fee_rate or 0.001), 4),
             "sl": sl, "tp": tp,
             "atr": round(atr, 2),
             "trailing_enabled": cfg.trailing_stop_enabled,

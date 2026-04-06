@@ -977,10 +977,11 @@ async function loadAllFromServer() {
       }
       updateStats(statsData);
       var openN = Array.isArray(statsData.open_trades) ? statsData.open_trades.length : (statsData.open_count||0);
-      addLog('ok', '✅ Дані оновлено: $' + fmt(statsData.balance||0) +
-             ' | закрито=' + (statsData.total||0) +
-             ' відкрито=' + openN +
-             ' WR=' + (statsData.winrate||0) + '%');
+      var loadMsg = '✅ $' + fmt(statsData.balance||0) +
+             ' | угод=' + ((statsData.total||0) + openN) +
+             ' (відкрито=' + openN + ')' +
+             ' WR=' + (statsData.winrate||0) + '%';
+      addLog('ok', loadMsg);
     }
 
     // Всі угоди
@@ -1323,10 +1324,16 @@ function initHist() {
 }
 
 function draw() {
-  if (!cv.offsetWidth) return;
-  // Скидаємо transform (без resize canvas якщо не потрібно)
+  if (!cv.offsetWidth || !cv.offsetHeight) return;
+  // Перевірка що canvas має правильний розмір
+  var dpr = window.devicePixelRatio || 1;
+  if (cv.width !== Math.floor(cv.offsetWidth * dpr) ||
+      cv.height !== Math.floor(cv.offsetHeight * dpr)) {
+    cv.width  = Math.floor(cv.offsetWidth  * dpr);
+    cv.height = Math.floor(cv.offsetHeight * dpr);
+  }
   cx.setTransform(1, 0, 0, 1, 0, 0);
-  cx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+  cx.scale(dpr, dpr);
   const W = cv.offsetWidth, H = cv.offsetHeight;
   cx.clearRect(0, 0, W, H);
 
@@ -1813,7 +1820,7 @@ function renderMobileTrades(list) {
       '</div>' +
       '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px">' +
         '<div><div style="font-size:7px;color:var(--mut);font-family:Share Tech Mono,monospace">ЦІНА ВХОДУ</div><div style="font-size:11px;font-weight:700">$' + fmt(entry) + '</div></div>' +
-        '<div><div style="font-size:7px;color:var(--mut);font-family:Share Tech Mono,monospace">СУМА</div><div style="font-size:11px;font-weight:700;color:var(--yel)">$' + fmt(amt, 0) + '</div></div>' +
+        '<div><div style="font-size:7px;color:var(--mut);font-family:Share Tech Mono,monospace">СУМА</div><div style="font-size:11px;font-weight:700;color:var(--yel)">' + (amt > 0 ? '$'+fmt(amt,0) : '<span style=\"color:var(--mut)\">—</span>') + '</div></div>' +
         '<div><div style="font-size:7px;color:var(--mut);font-family:Share Tech Mono,monospace">P&L' + (pnlLive?' live':'') + '</div><div style="font-size:13px;font-weight:700;color:' + pnlColor + '">' + (pnlVal >= 0 ? '+' : '') + '$' + fmt(pnlVal) + '</div></div>' +
         '<div><div style="font-size:7px;color:var(--mut);font-family:Share Tech Mono,monospace">SL</div><div style="font-size:10px;color:var(--red)">' + (sl ? '$' + fmt(sl) : '—') + '</div></div>' +
         '<div><div style="font-size:7px;color:var(--mut);font-family:Share Tech Mono,monospace">TP</div><div style="font-size:10px;color:var(--grn)">' + (tp ? '$' + fmt(tp) : '—') + '</div></div>' +
@@ -1885,7 +1892,7 @@ function renderTrades(list, prepend=false) {
     html += '<td style="color:var(--acc)"><b>' + (t.pair || '') + '</b></td>';
     html += '<td><span class="badge ' + side + '">' + (t.side || '') + '</span></td>';
     html += '<td style="font-family:monospace;font-size:10px">$' + fmt(entry) + '</td>';
-    html += '<td class="py" style="font-weight:700">$' + fmt(amt, 0) + '</td>';
+    html += '<td class="py" style="font-weight:700;color:var(--yel)">$' + (amt > 0 ? fmt(amt,0) : '—') + '</td>';
     html += '<td style="color:var(--red);font-size:9px">' + slStr + '</td>';
     html += '<td style="color:var(--grn);font-size:9px">' + tpStr + '</td>';
     html += '<td class="py" style="font-size:9px">-$' + fmt(fee, 4) + '</td>';
@@ -1920,11 +1927,17 @@ function updateStats(data) {
   }
   if (!gross) gross = parseFloat(data.gross_pnl || 0);
   var bal   = parseFloat(data.balance   || balance || 1000);
-  // Рахуємо ВСІ угоди: закриті + відкриті
+  // УГОД = закриті (SL/TP/CLOSED) + відкриті (OPEN)
   var closedCount = parseInt(data.total || 0);
   var openCount2  = Array.isArray(data.open_trades) ? data.open_trades.length
                   : parseInt(data.open_count || 0);
   var total = closedCount + openCount2;
+  // Якщо є угоди в таблиці але total=0 — беремо з таблиці
+  if (total === 0 && trades && trades.length > 0) {
+    total = trades.length;
+    var cl2 = trades.filter(function(t){ return t.status && t.status !== 'OPEN'; });
+    closedCount = cl2.length;
+  }
   var wr    = parseFloat(data.winrate   || 0);
   var chg   = bal - sBal;
   var pct   = sBal > 0 ? (chg / sBal * 100).toFixed(2) : '0.00';
@@ -2277,6 +2290,10 @@ async function fetchKlines(pair, tf, limit = 120) {
         // Показуємо останні N свічок
         chartView = {offset: Math.max(0, candles.length - 100), count: 100};
         if (bar) { bar.style.width = '100%'; setTimeout(() => bar.style.width = '0%', 400); }
+        // Форсуємо правильний розмір canvas перед малюванням
+        var dpr2 = window.devicePixelRatio || 1;
+        cv.width  = Math.floor(cv.offsetWidth  * dpr2);
+        cv.height = Math.floor(cv.offsetHeight * dpr2);
         draw();
         // Оновлюємо OHLCV останньої свічки одразу
         if (candles.length > 0) {

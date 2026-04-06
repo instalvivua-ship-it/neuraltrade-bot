@@ -278,10 +278,14 @@ class Database:
             self.conn.commit()
 
     def get_open_trades(self) -> List[dict]:
-        rows = self.conn.execute(
-            "SELECT * FROM trades WHERE status='OPEN'"
-        ).fetchall()
-        return [dict(r) for r in rows]
+        try:
+            with self._lock:
+                rows = self.conn.execute(
+                    "SELECT * FROM trades WHERE status='OPEN'"
+                ).fetchall()
+            return [dict(r) for r in rows]
+        except Exception:
+            return []
 
     def get_trades(self, limit: int = 500, pair: str = None) -> List[dict]:
         if pair:
