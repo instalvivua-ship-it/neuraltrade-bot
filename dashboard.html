@@ -744,13 +744,16 @@ function connectWS() {
       addLog('warn', 'Сервер недоступний — запусти: python server.py');
     };
 
+    var _wsRetry = 0;
     wsConn.onclose = () => {
-      if (serverMode) {
+      if (serverMode || _wsRetry < 5) {
         serverMode = false;
         setConnState('err', 'ВІДКЛЮЧЕНО');
         addLog('warn', 'WS закрито');
-        // Авто-реконнект через 5с
-        setTimeout(connectWS, 5000);
+        // Exponential backoff: 3s, 6s, 12s, 24s, 30s
+        var delay = Math.min(3000 * Math.pow(2, _wsRetry), 30000);
+        _wsRetry++;
+        setTimeout(function() { connectWS(); _wsRetry = Math.max(0, _wsRetry-1); }, delay);
       }
     };
   } catch(e) {
@@ -964,9 +967,11 @@ async function loadAllFromServer() {
         sBal = initBal;
       }
       updateStats(statsData);
-      addLog('ok', '📊 Stats: баланс=$' + fmt(statsData.balance || 0) +
-             ' угод=' + (statsData.total || 0) +
-             ' WR=' + (statsData.winrate || 0) + '%');
+      var openN = Array.isArray(statsData.open_trades) ? statsData.open_trades.length : (statsData.open_count||0);
+      addLog('ok', '✅ Дані оновлено: $' + fmt(statsData.balance||0) +
+             ' | закрито=' + (statsData.total||0) +
+             ' відкрито=' + openN +
+             ' WR=' + (statsData.winrate||0) + '%');
     }
 
     // Всі угоди
@@ -1158,9 +1163,16 @@ function runDemoMode() {
 // ════════════════════════════════════════════════════════════
 const cv = g('ch'), cx = cv.getContext('2d');
 function rsz() {
-  cv.width  = cv.offsetWidth  * devicePixelRatio;
-  cv.height = cv.offsetHeight * devicePixelRatio;
-  cx.scale(devicePixelRatio, devicePixelRatio);
+  var w = cv.offsetWidth  * (window.devicePixelRatio || 1);
+  var h = cv.offsetHeight * (window.devicePixelRatio || 1);
+  // Тільки якщо розмір змінився — скидаємо canvas
+  if (cv.width !== w || cv.height !== h) {
+    cv.width  = w;
+    cv.height = h;
+  }
+  // ЗАВЖДИ скидаємо transform перед scale щоб не накопичувався
+  cx.setTransform(1, 0, 0, 1, 0, 0);
+  cx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
 }
 window.addEventListener('resize', () => { rsz(); draw(); });
 
@@ -1302,7 +1314,10 @@ function initHist() {
 }
 
 function draw() {
-  if (!cv.offsetWidth) return; rsz();
+  if (!cv.offsetWidth) return;
+  // Скидаємо transform (без resize canvas якщо не потрібно)
+  cx.setTransform(1, 0, 0, 1, 0, 0);
+  cx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
   const W = cv.offsetWidth, H = cv.offsetHeight;
   cx.clearRect(0, 0, W, H);
 
@@ -1337,7 +1352,13 @@ function draw() {
   const tx      = i => MARG + (i / Math.max(1, slice.length - 1)) * (chartW - MARG * 2);
   const ty = v  => TOP + chartH - (v - lo) / priceRng * chartH;
 
-  // ── Фон сітки ─────────────────────────────────────────────────
+  // ── Clip: ліва частина (тільки графік, без шкали) ───────────────
+  cx.save();
+  cx.beginPath();
+  cx.rect(0, 0, chartW, H);
+  cx.clip();
+
+  // ── Фон графіку ───────────────────────────────────────────────
   cx.fillStyle = '#020608';
   cx.fillRect(0, 0, W, H);
 
@@ -1379,11 +1400,8 @@ function draw() {
     cx.setLineDash([]);
   }
 
-  // ── Volume зона (без фону — прозора) ─────────────────────────
+  // ── Volume зона ───────────────────────────────────────────────
   const volTop = TOP + chartH + 2;
-  // Легкий роздільник між графіком і volume
-  cx.fillStyle = 'rgba(13,42,48,.4)';
-  cx.fillRect(0, volTop, chartW, 1);
 
   // Volume бари
   const maxVol = Math.max(...slice.map(d => d.v || 0), 1);
@@ -1463,6 +1481,9 @@ function draw() {
       cx.strokeRect(x - candleW/2, bY, candleW, bH);
     }
   });
+
+  // ── Знімаємо clip перед малюванням шкали ─────────────────────
+  cx.restore();
 
   // ── Поточна ціна ─────────────────────────────────────────────
   const lastD = data[data.length - 1];
@@ -1596,11 +1617,11 @@ function draw() {
     }
   }
 
-  // ── Правий бордер шкали ───────────────────────────────────────
-  cx.fillStyle = 'rgba(0,255,231,.15)';
-  cx.fillRect(chartW, 0, 1, H);
+  // ── Права шкала — чорний фон + роздільник ────────────────────
   cx.fillStyle = '#020608';
-  cx.fillRect(chartW + 1, 0, PRICE_SCALE, H);
+  cx.fillRect(chartW, 0, PRICE_SCALE + 1, H);
+  cx.fillStyle = 'rgba(0,255,231,.2)';
+  cx.fillRect(chartW, 0, 1, H - TIME_SCALE);
 }
 
 
@@ -2428,7 +2449,7 @@ setInterval(function() {
   fetch(apiUrl + '/health').catch(function(){});
 }, 180000);
 
-// ── Авто-синхронізація кожні 2 хв коли сервер підключений ──────
+// ── Авто-синхронізація кожні 2 хв (для швидшого збору ML даних) ─
 setInterval(function() {
   if (serverMode) loadAllFromServer();
 }, 120000);
