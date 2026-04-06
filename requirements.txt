@@ -1,14 +1,28 @@
+# NeuralTrade AI — залежності
+# Встановлення: pip install -r requirements.txt
+
+# Торгівля
 ccxt>=4.3.0
+
+# Веб-сервер + WebSocket
 fastapi>=0.111.0
 uvicorn[standard]>=0.29.0
 websockets>=12.0
+
+# Технічний аналіз
 pandas>=2.2.0
 numpy>=1.26.0
 ta>=0.11.0
+
+# ML / Навчання
 scikit-learn>=1.4.0
 xgboost>=2.0.0
+
+# LLM агенти (опціонально)
 openai>=1.30.0
 anthropic>=0.28.0
+
+# Планувальник + утиліти
 schedule>=1.2.0
 requests>=2.31.0
 python-dotenv>=1.0.0

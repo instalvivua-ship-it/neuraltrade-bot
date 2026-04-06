@@ -172,7 +172,7 @@ def get_stats(_auth=Depends(verify_api_key)):
         "paused":      tg.is_paused,
         "open_trades": open_t,
         "open_count":  len(open_t),
-        "ml_samples":  db.conn.execute("SELECT COUNT(*) FROM trades").fetchone()[0],
+        "ml_samples":  db.get_stats().get("total", 0) + len(db.get_open_trades()),
     }
 
 
@@ -183,8 +183,12 @@ def get_trades(limit: int = 1000, pair: str = None, _auth=Depends(verify_api_key
 
 @app.get("/api/trades/all")
 def get_all_trades(_auth=Depends(verify_api_key)):
-    """Повертає абсолютно всі угоди без ліміту."""
-    return db.get_trades(limit=99999)
+    """Повертає всі угоди (до 9999)."""
+    try:
+        return db.get_trades(limit=9999)
+    except Exception as e:
+        log.error(f"get_all_trades: {e}")
+        return []
 
 
 @app.get("/api/metrics")
@@ -204,10 +208,15 @@ def get_regime(_auth=Depends(verify_api_key)):
 
 @app.get("/api/signals")
 def get_signals(_auth=Depends(verify_api_key)):
-    rows = db.conn.execute(
-        "SELECT * FROM signals ORDER BY id DESC LIMIT 50"
-    ).fetchall()
-    return [dict(r) for r in rows]
+    try:
+        with db._lock:
+            rows = db.conn.execute(
+                "SELECT * FROM signals ORDER BY id DESC LIMIT 50"
+            ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        log.error(f"get_signals: {e}")
+        return []
 
 
 @app.get("/api/config")
@@ -284,10 +293,15 @@ def export_csv(_auth=Depends(verify_api_key)):
 
 @app.get("/api/balance_history")
 def balance_history(_auth=Depends(verify_api_key)):
-    rows = db.conn.execute(
-        "SELECT * FROM balance_history ORDER BY id DESC LIMIT 200"
-    ).fetchall()
-    return [dict(r) for r in rows]
+    try:
+        with db._lock:
+            rows = db.conn.execute(
+                "SELECT * FROM balance_history ORDER BY id DESC LIMIT 200"
+            ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        log.error(f"balance_history: {e}")
+        return []
 
 
 # ════════════════════════════════════════════════════════════════
@@ -386,7 +400,7 @@ def run_trading_cycle():
         "balance":    executor.get_balance(),
         "open_trades": _open,
         "open_count":  len(_open),
-        "ml_samples":  db.conn.execute("SELECT COUNT(*) FROM trades").fetchone()[0],
+        "ml_samples":  db.get_stats().get("total", 0) + len(db.get_open_trades()),
         "paused":     tg.is_paused,
     })
 
@@ -652,23 +666,19 @@ async def startup():
 
 
 async def _self_ping():
-    """
-    Самопінг кожні 5 хв — запобігає засинанню Railway.
-    Railway засинає сервіс після ~10 хв без HTTP запитів.
-    """
-    import aiohttp
-    await asyncio.sleep(60)  # Чекаємо старту
+    """Самопінг кожні 4 хв — запобігає засинанню Railway."""
+    await asyncio.sleep(30)  # Чекаємо старту сервера
     port = int(os.environ.get("PORT", 8000))
     url  = f"http://localhost:{port}/health"
     while True:
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as r:
-                    if r.status == 200:
-                        log.debug("🏓 Self-ping OK")
+            # Використовуємо asyncio замість aiohttp для мінімальних залежностей
+            import urllib.request
+            urllib.request.urlopen(url, timeout=5)
+            log.debug("🏓 Self-ping OK")
         except Exception:
             pass
-        await asyncio.sleep(300)  # Кожні 5 хвилин
+        await asyncio.sleep(240)  # Кожні 4 хвилини
 
     # Завантаження ML
     for pair in cfg.pairs:
