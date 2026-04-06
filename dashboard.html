@@ -107,9 +107,9 @@ input[type=range]{width:100%;accent-color:var(--acc)}
   cursor:pointer;padding:6px 8px;border-radius:10px;transition:all .2s;
   min-width:52px;position:relative;-webkit-tap-highlight-color:transparent}
 .nb.on{color:var(--acc);background:rgba(0,255,231,.07)}
-.nb.on::after{content:'';position:absolute;bottom:-1px;left:20%;right:20%;
-  height:2px;background:var(--acc);border-radius:2px;box-shadow:0 0 6px var(--acc)}
-.ni{font-size:18px;line-height:1}
+.nb.on::after{content:'';position:absolute;bottom:-1px;left:15%;right:15%;
+  height:2px;background:var(--acc);border-radius:2px;box-shadow:0 0 8px var(--acc)}
+.ni{font-size:20px;line-height:1.1}
 .nb-badge{position:absolute;top:4px;right:6px;background:var(--red);
   color:#fff;font-size:7px;border-radius:8px;padding:1px 4px;min-width:14px;text-align:center}
 
@@ -122,15 +122,28 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 /* ── Mobile swipe wrapper ───────────────────────── */
 @media(max-width:900px){
   .main-area{overflow:hidden;position:relative}
-  canvas#ch{height:240px!important;touch-action:none}
+  canvas#ch{height:200px!important;touch-action:none}
   #serverBar{flex-wrap:nowrap;overflow-x:auto}
-  #serverUrl{width:160px!important;min-width:100px}
-  #apiKeyInput{width:110px!important}
+  #serverUrl{width:150px!important;min-width:80px}
+  #apiKeyInput{width:100px!important}
   .htime{display:none}
-  header{height:44px;padding:0 10px}
+  /* Хедер на мобільному — 2 рядки */
+  header{height:auto!important;min-height:44px;padding:6px 10px;flex-wrap:wrap;gap:4px}
   .logo-text{font-size:11px}
+  .hright{gap:4px;flex-wrap:wrap;justify-content:flex-end}
+  /* Ховаємо CSV та час на мобільному */
+  .hbtn[onclick*="csv"]{display:none}
+  .hbtn[onclick*="CSV"]{display:none}
+  #csvBtn{display:none}
+  .htime{display:none}
   .hbtn{padding:3px 7px;font-size:9px}
-  .conn-pill{font-size:9px;padding:3px 8px}
+  .conn-pill{font-size:9px;padding:3px 7px}
+  /* Pair tabs scroll */
+  .ptabs{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .tftabs{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  /* Price display smaller */
+  .cprice{font-size:22px!important}
+  .pchg{font-size:10px}
 }
 
 /* ── Mobile Stats compact ───────────────────────── */
@@ -195,7 +208,7 @@ canvas#ch{width:100%;height:220px;display:block;cursor:crosshair;box-sizing:bord
 .chart-info span{color:var(--txt)}.chart-info .g{color:var(--grn)}.chart-info .r{color:var(--red)}
 
 /* SIGNAL BAR */
-.sigbar{background:var(--panel);border-top:1px solid var(--brd);border-bottom:1px solid var(--brd);padding:7px 14px;display:flex;align-items:center;gap:7px;overflow-x:auto;scrollbar-width:none;flex-shrink:0}
+.sigbar{background:var(--panel);border-top:1px solid var(--brd);border-bottom:1px solid var(--brd);padding:6px 10px;display:flex;align-items:center;gap:6px;overflow-x:auto;scrollbar-width:none;flex-shrink:0;-webkit-overflow-scrolling:touch}
 .sigbar::-webkit-scrollbar{display:none}
 .sc{display:flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;font-family:'Share Tech Mono',monospace;font-size:10px;white-space:nowrap;border:1px solid;flex-shrink:0;transition:all .4s}
 .sc.b{background:rgba(0,255,136,.07);border-color:rgba(0,255,136,.25);color:var(--grn)}
@@ -217,6 +230,8 @@ tr.nr{animation:ra .5s ease}
 .badge.open{background:rgba(0,255,231,.1);color:var(--acc);border:1px solid rgba(0,255,231,.25)}
 .badge.tp{background:rgba(0,255,136,.08);color:var(--grn);border:1px solid rgba(0,255,136,.2)}
 .badge.open{background:rgba(0,255,231,.08);color:var(--acc);border:1px solid rgba(0,255,231,.25)}
+@media(max-width:900px){.desktop-only{display:none!important}}
+@media(min-width:901px){.mobile-only{display:none!important}}
 .open-row{background:rgba(0,255,231,.015)!important}
 .open-row:hover{background:rgba(0,255,231,.03)!important}
 .badge.sl{background:rgba(255,62,108,.08);color:var(--red);border:1px solid rgba(255,62,108,.2)}
@@ -481,15 +496,17 @@ tr.nr{animation:ra .5s ease}
     </div>
     <div class="p" style="flex-shrink:0"><div class="pt">УГОДИ</div></div>
     <div class="tw">
-      <table>
+      <div class="desktop-only"><table>
         <thead><tr>
           <th>#</th><th>ЧАС</th><th>ПАРА</th><th>БІК</th>
           <th>ЦІНА</th><th>СУМА</th><th>SL</th><th>TP</th><th>FEE</th><th>NET P&L</th>
           <th>СТАТ</th>
         </tr></thead>
         <tbody id="tradesBody"></tbody>
-      </table>
+      </table></div>
     </div>
+    <!-- Мобільні картки угод (тільки на мобільному) -->
+    <div class="mobile-only" id="mobileTradesInChart" style="padding:8px;display:none"></div>
     <div class="bbar">
       <div class="bs">
         <div class="bsi"><span class="bsl">GROSS</span><span class="bsv pg" id="bGross">$0.00</span></div>
@@ -1148,33 +1165,44 @@ function rsz() {
 window.addEventListener('resize', () => { rsz(); draw(); });
 
 // Кросхер
-cv.addEventListener('mousemove', e => {
-  const r = cv.getBoundingClientRect();
-  crosshair.x = (e.clientX - r.left) * cv.width  / cv.offsetWidth  / devicePixelRatio;
-  crosshair.y = (e.clientY - r.top)  * cv.height / cv.offsetHeight / devicePixelRatio;
-
-  // Оновити OHLC інфо
-  const PRICE_SCALE = 62;
-  const chartW = cv.offsetWidth - PRICE_SCALE;
-  if (crosshair.x < chartW && candles.length > 0) {
-    const i    = Math.floor(crosshair.x / chartW * chartView.count);
-    const idx  = Math.floor(chartView.offset) + i;
-    const d    = candles[Math.min(idx, candles.length-1)];
+function updateOHLCV(clientX, clientY) {
+  var r = cv.getBoundingClientRect();
+  var PS = window.innerWidth <= 900 ? 62 : 72;
+  var cw = cv.offsetWidth - PS;
+  var dpr = window.devicePixelRatio || 1;
+  crosshair.x = (clientX - r.left) * cv.width  / cv.offsetWidth  / dpr;
+  crosshair.y = (clientY - r.top)  * cv.height / cv.offsetHeight / dpr;
+  if (crosshair.x < cw * dpr && candles.length > 0) {
+    var i2  = Math.floor((clientX - r.left) / cw * chartView.count);
+    var idx2 = Math.floor(chartView.offset) + i2;
+    var d = candles[Math.min(Math.max(0, idx2), candles.length-1)];
     if (d) {
-      const chg = d.o > 0 ? ((d.c - d.o) / d.o * 100).toFixed(2) : 0;
-      const bull = d.c >= d.o;
-      const g = (id, v) => { const el = document.getElementById(id); if(el) el.textContent = v; };
-      g('ciO', 'O: $' + d.o.toLocaleString('en',{maximumFractionDigits:2}));
-      g('ciH', 'H: $' + d.h.toLocaleString('en',{maximumFractionDigits:2}));
-      g('ciL', 'L: $' + d.l.toLocaleString('en',{maximumFractionDigits:2}));
-      g('ciC', 'C: $' + d.c.toLocaleString('en',{maximumFractionDigits:2}));
-      g('ciV', 'V: ' + (d.v||0).toLocaleString('en',{maximumFractionDigits:0}));
-      const ce = document.getElementById('ciChg');
-      if(ce){ce.textContent=(bull?'+':'')+chg+'%';ce.className=bull?'g':'r';}
+      var chg2 = d.o > 0 ? ((d.c - d.o) / d.o * 100).toFixed(2) : 0;
+      var bull2 = d.c >= d.o;
+      var setCI = function(id, v) { var el = document.getElementById(id); if(el) el.textContent = v; };
+      setCI('ciO', 'O: $' + d.o.toLocaleString('en',{maximumFractionDigits:2}));
+      setCI('ciH', 'H: $' + d.h.toLocaleString('en',{maximumFractionDigits:2}));
+      setCI('ciL', 'L: $' + d.l.toLocaleString('en',{maximumFractionDigits:2}));
+      setCI('ciC', 'C: $' + d.c.toLocaleString('en',{maximumFractionDigits:2}));
+      setCI('ciV', 'V: ' + (d.v||0).toLocaleString('en',{maximumFractionDigits:0}));
+      var ce = document.getElementById('ciChg');
+      if(ce){ce.textContent=(bull2?'+':'')+chg2+'%';ce.className=bull2?'g':'r';}
     }
   }
   draw();
+}
+
+// Оновлення OHLCV при hover мишею
+cv.addEventListener('mousemove', function(e) {
+  updateOHLCV(e.clientX, e.clientY);
 });
+
+// Оновлення OHLCV при touch (мобільний)
+cv.addEventListener('touchmove', function(e) {
+  if (e.touches.length === 1) {
+    updateOHLCV(e.touches[0].clientX, e.touches[0].clientY);
+  }
+}, {passive: true});
 
 cv.addEventListener('mouseleave', () => {
   crosshair = {x: -1, y: -1};
@@ -1283,7 +1311,7 @@ function draw() {
   if (data.length < 2) return;
 
   // ── Розміри зон ──────────────────────────────────────────────
-  const PRICE_SCALE = 72;  // права шкала цін
+  const PRICE_SCALE = window.innerWidth <= 900 ? 62 : 72;
   const TIME_SCALE  = 22;  // нижня шкала часу
   const VOL_H       = Math.floor(H * 0.18); // висота volume
   const TOP         = 10;
@@ -1764,6 +1792,14 @@ function renderTrades(list, prepend=false) {
   // Зберігаємо список для mobile
   trades = list;
   if (currentTab === 'trades') renderMobileTrades(list);
+  // Мобільні картки в таб ГРАФІК
+  if (window.innerWidth <= 900) {
+    var mInChart = g('mobileTradesInChart');
+    if (mInChart) {
+      mInChart.style.display = list.length ? 'block' : 'none';
+      renderMobileTrades(list);
+    }
+  }
   tbody.innerHTML = list.slice(0,25).map(function(t, i) {
     const entry  = t.entry_price || t.price || 0;
     const amt    = t.amount_usd  || t.amt   || 0;
@@ -2197,7 +2233,20 @@ async function fetchKlines(pair, tf, limit = 120) {
         chartView = {offset: Math.max(0, candles.length - 100), count: 100};
         if (bar) { bar.style.width = '100%'; setTimeout(() => bar.style.width = '0%', 400); }
         draw();
-        addLog('ok', `📊 ${pair} ${tf}: ${candles.length} свічок завантажено`);
+        // Оновлюємо OHLCV останньої свічки одразу
+        if (candles.length > 0) {
+          var d0 = candles[candles.length-1];
+          var setCI2 = function(id, v) { var el = document.getElementById(id); if(el) el.textContent = v; };
+          setCI2('ciO', 'O: $' + d0.o.toLocaleString('en',{maximumFractionDigits:2}));
+          setCI2('ciH', 'H: $' + d0.h.toLocaleString('en',{maximumFractionDigits:2}));
+          setCI2('ciL', 'L: $' + d0.l.toLocaleString('en',{maximumFractionDigits:2}));
+          setCI2('ciC', 'C: $' + d0.c.toLocaleString('en',{maximumFractionDigits:2}));
+          setCI2('ciV', 'V: ' + (d0.v||0).toLocaleString('en',{maximumFractionDigits:0}));
+          var chg0 = d0.o > 0 ? ((d0.c-d0.o)/d0.o*100).toFixed(2) : '0.00';
+          var ce0 = document.getElementById('ciChg');
+          if(ce0){ce0.textContent=(d0.c>=d0.o?'+':'')+chg0+'%';ce0.className=d0.c>=d0.o?'g':'r';}
+        }
+        addLog('ok', '📊 ' + pair + ' ' + tf + ': ' + candles.length + ' свічок завантажено');
         return true;
       }
     } catch(e) {
