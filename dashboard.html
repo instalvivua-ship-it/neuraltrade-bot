@@ -1360,11 +1360,12 @@ function draw() {
     const label = v >= 1000
       ? '$' + v.toLocaleString('en', {maximumFractionDigits: 0})
       : '$' + v.toFixed(2);
-    cx.fillStyle = 'rgba(4,10,14,.98)';
-    cx.fillRect(chartW + 2, y - 9, PRICE_SCALE - 3, 18);
-    cx.fillStyle = '#c0e0ea';
-    cx.font = '10px Share Tech Mono';
-    cx.fillText(label, chartW + 6, y + 4);
+    // Ціна на шкалі
+    cx.fillStyle = 'rgba(2,6,8,1)';
+    cx.fillRect(chartW + 1, y - 10, PRICE_SCALE, 20);
+    cx.fillStyle = '#e0f4f8';
+    cx.font = 'bold 10px Share Tech Mono';
+    cx.fillText(label, chartW + 5, y + 4);
   }
 
   // ── Вертикальна часова сітка ──────────────────────────────────
@@ -1378,10 +1379,11 @@ function draw() {
     cx.setLineDash([]);
   }
 
-  // ── Volume зона (фон) ─────────────────────────────────────────
+  // ── Volume зона (без фону — прозора) ─────────────────────────
   const volTop = TOP + chartH + 2;
-  cx.fillStyle = 'rgba(6,13,16,.6)';
-  cx.fillRect(0, volTop, chartW, VOL_H - 2);
+  // Легкий роздільник між графіком і volume
+  cx.fillStyle = 'rgba(13,42,48,.4)';
+  cx.fillRect(0, volTop, chartW, 1);
 
   // Volume бари
   const maxVol = Math.max(...slice.map(d => d.v || 0), 1);
@@ -1483,24 +1485,30 @@ function draw() {
     cx.font = 'bold 10px Share Tech Mono';
     const lblW = cx.measureText(priceStr).width + 12;
     // Яскравий бейдж поточної ціни
-    cx.shadowBlur = 10; cx.shadowColor = lCol;
+    // Поточна ціна badge
+    cx.shadowBlur  = 12;
+    cx.shadowColor = lCol;
     cx.fillStyle   = lCol;
-    cx.fillRect(chartW + 1, ly - 12, PRICE_SCALE - 1, 24);
+    cx.fillRect(chartW + 1, ly - 11, PRICE_SCALE, 22);
     cx.shadowBlur  = 0;
     cx.fillStyle   = '#000';
     cx.font        = 'bold 11px Share Tech Mono';
-    cx.fillText(priceStr, chartW + 5, ly + 6);
+    cx.fillText(priceStr, chartW + 4, ly + 5);
+    // Стрілка
+    cx.shadowBlur  = 6;
+    cx.shadowColor = lCol;
+    cx.fillStyle   = lCol;
     cx.beginPath();
     cx.moveTo(chartW - 8, ly);
     cx.lineTo(chartW + 1, ly - 7);
     cx.lineTo(chartW + 1, ly + 7);
     cx.closePath();
-    cx.fillStyle = lCol;
     cx.fill();
+    cx.shadowBlur = 0;
   }
 
   // ── Часова шкала внизу ───────────────────────────────────────
-  cx.fillStyle = 'rgba(6,13,16,.8)';
+  cx.fillStyle = 'rgba(2,6,8,.95)';
   cx.fillRect(0, H - TIME_SCALE, W, TIME_SCALE);
   cx.font = '9px Share Tech Mono';
   cx.fillStyle = 'rgba(58,102,112,.8)';
@@ -1589,10 +1597,10 @@ function draw() {
   }
 
   // ── Правий бордер шкали ───────────────────────────────────────
-  cx.fillStyle = 'rgba(13,42,48,.9)';
+  cx.fillStyle = 'rgba(0,255,231,.15)';
   cx.fillRect(chartW, 0, 1, H);
-  cx.fillStyle = 'rgba(6,13,16,.95)';
-  cx.fillRect(chartW + 1, 0, PRICE_SCALE, H - TIME_SCALE);
+  cx.fillStyle = '#020608';
+  cx.fillRect(chartW + 1, 0, PRICE_SCALE, H);
 }
 
 

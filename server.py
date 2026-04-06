@@ -55,7 +55,8 @@ _current_regimes: dict = {}
 app = FastAPI(title="NeuralTrade AI v2", version="2.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:*", "http://127.0.0.1:*"],
+    allow_origins=["*"],  # GitHub Pages + будь-який дашборд
+    allow_credentials=False,
     allow_methods=["GET","POST"],
     allow_headers=["*"],
 )
