@@ -450,10 +450,24 @@ class TelegramNotifier:
         Polling команд — запускається в окремому потоці.
         Перевіряє нові повідомлення кожні 5 секунд.
         """
-        if not self.enabled:
+        # Чекаємо поки token і chat_id з'являться (можуть завантажитись пізніше)
+        for _ in range(30):  # чекаємо до 30 сек
+            if self.token and self.chat_id:
+                break
+            time.sleep(1)
+
+        if not self.token:
+            log.warning("Telegram: TELEGRAM_TOKEN не встановлено в Railway Variables!")
             return
+        if not self.chat_id:
+            log.warning("Telegram: TELEGRAM_CHAT_ID не встановлено — чекаємо першого повідомлення")
+
+        self.enabled = True  # оновлюємо
+        log.info(f"📱 Telegram polling запущено | token={'✅' if self.token else '❌'} | chat_id={'✅' if self.chat_id else '⏳'}")
         offset = 0
-        log.info("📱 Telegram polling запущено")
+
+        # Логуємо що маємо
+        log.info(f"📱 Telegram: token={'✅' if self.token else '❌'} chat_id='{self.chat_id}'")
 
         while True:
             try:
@@ -462,28 +476,43 @@ class TelegramNotifier:
                     params={"offset": offset, "timeout": 30},
                     timeout=35,
                 )
+                if not r.ok:
+                    log.error(f"Telegram getUpdates HTTP {r.status_code}: {r.text[:100]}")
+                    time.sleep(10)
+                    continue
+
                 updates = r.json().get("result", [])
                 for upd in updates:
                     offset = upd["update_id"] + 1
-                    msg = upd.get("message", {})
-                    text = msg.get("text", "").strip()
-                    chat = str(msg.get("chat", {}).get("id", ""))
+                    msg    = upd.get("message", {})
+                    text   = msg.get("text", "").strip()
+                    chat   = str(msg.get("chat", {}).get("id", ""))
 
-                    # Авто-збереження chat_id при першому повідомленні
-                    if not self.chat_id:
-                        self.chat_id = chat
-                        log.info(f"📱 chat_id збережено: {chat}")
-                        self.send(f"✅ NeuralTrade підключено!\nChat ID: <code>{chat}</code>\n/help — список команд")
+                    log.info(f"📱 Telegram повідомлення від chat={chat}: '{text}'")
 
-                    # Порівнюємо без пробілів
-                    if chat.strip() != str(self.chat_id).strip():
-                        log.debug(f"Telegram: чужий chat {chat}")
-                        continue
+                    # Авто-оновлення chat_id при розбіжності
+                    stored = str(self.chat_id).strip()
+                    incoming = chat.strip()
+                    if not stored:
+                        # Перший раз — зберігаємо
+                        self.chat_id = incoming
+                        log.info(f"📱 chat_id встановлено: {incoming}")
+                    elif stored != incoming:
+                        # Розбіжність — оновлюємо і повідомляємо
+                        log.warning(f"📱 chat_id змінився: '{stored}' → '{incoming}'")
+                        self.chat_id = incoming
+                        self.send(
+                            f"⚠️ Chat ID оновлено: <code>{incoming}</code>\n"
+                            f"Додай в Railway Variables:\n"
+                            f"TELEGRAM_CHAT_ID = <code>{incoming}</code>"
+                        )
 
+                    # Виконуємо команду для будь-якого chat
                     self._handle_command(text, db, cfg)
+
             except Exception as e:
-                log.debug(f"Telegram poll: {e}")
-            time.sleep(5)
+                log.error(f"Telegram poll помилка: {e}", exc_info=True)
+            time.sleep(3)
 
     def _handle_command(self, text: str, db, cfg):
         """Обробляє команди Telegram бота."""
