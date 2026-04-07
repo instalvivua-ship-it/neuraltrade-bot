@@ -591,22 +591,24 @@ class TelegramNotifier:
             # ── /balance ──────────────────────────────────────────
             elif cmd == "/balance":
                 try:
-                    stats = db.get_stats()
-                    opens = db.get_open_trades()
-                    bal_row = db.conn.execute(
-                        "SELECT COALESCE(balance,1000) FROM balance_history ORDER BY id DESC LIMIT 1"
-                    ).fetchone()
-                    bal = float(bal_row[0]) if bal_row else (cfg.initial_demo_balance or 1000)
-                except Exception:
-                    bal   = cfg.initial_demo_balance or 1000
-                    stats = {"net_pnl": 0, "fees": 0}
-                    opens = []
-                self.send(
-                    f"💰 <b>Баланс: ${bal:.2f}</b>\n"
-                    f"Net P&L: <code>${stats.get('net_pnl', 0):+.2f}</code>\n"
-                    f"Комісії: <code>-${stats.get('fees', 0):.4f}</code>\n"
-                    f"Відкрито: {len(opens)} угод"
-                )
+                    stats   = db.get_stats()
+                    opens   = db.get_open_trades()
+                    initial = float(cfg.initial_demo_balance or 1000)
+                    closed_net  = float(stats.get('net_pnl', 0))
+                    open_frozen = sum(float(t.get('amount_usd',0)) for t in opens)
+                    open_fees   = sum(float(t.get('fee_usd',0)) for t in opens)
+                    # Правильний баланс = початковий + закриті P&L - заморожені
+                    real_bal = initial + closed_net - open_frozen - open_fees
+                    self.send(
+                        f"💰 <b>Баланс: ${real_bal:.2f}</b>\n"
+                        f"💵 Початковий: <code>${initial:.2f}</code>\n"
+                        f"📈 P&L закритих: <code>${closed_net:+.2f}</code>\n"
+                        f"🔒 Заморожено: <code>-${open_frozen:.2f}</code> ({len(opens)} угод)\n"
+                        f"💸 Комісії (закр.): <code>-${stats.get('fees',0):.4f}</code>\n"
+                        f"📊 Вільно: <code>${real_bal:.2f}</code>"
+                    )
+                except Exception as e:
+                    self.send(f"❌ /balance: {e}")
 
             # ── /stats ────────────────────────────────────────────
             elif cmd == "/stats":
@@ -808,7 +810,7 @@ class TelegramNotifier:
                     msg = (
                         f"📊 <b>ВИПИСКА NeuralTrade DEMO</b>\n"
                         f"━━━━━━━━━━━━━━━━━━━━\n"
-                        f"💰 Баланс: <code>${stats.get('net_pnl',0)+1000:.2f}</code>\n"
+                        f"💰 Баланс: <code>${initial + stats.get('net_pnl',0) - sum(float(t.get('amount_usd',0)) for t in opens) - sum(float(t.get('fee_usd',0)) for t in opens):.2f}</code>\n"
                         f"📈 Всього угод: {len(closed)} закрито | {len(opens)} відкрито\n"
                         f"🎯 WR: {stats.get('winrate',0):.1f}%\n"
                         f"━━━━━━━━━━━━━━\n"

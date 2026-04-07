@@ -81,11 +81,28 @@ class TechAnalystAgent:
         self._init_exchange()
 
     def _init_exchange(self):
-        # ccxt повністю вимкнено — Railway блокує Binance (451)
-        # Ціни: CoinGecko + Bybit (не блокуються)
-        # OHLCV: Bybit public API
-        self._exchange = None
-        log.info("✅ Ціни: CoinGecko + Bybit API (Railway-compatible)")
+        """Ініціалізація Bybit exchange через ccxt для LIVE торгівлі."""
+        try:
+            import ccxt
+            api_key    = self.cfg.api_key    or ""
+            api_secret = self.cfg.api_secret or ""
+            if not api_key or not api_secret:
+                log.warning("⚠️ LIVE: api_key/api_secret не встановлені в Railway Variables!")
+                self._exchange = None
+                return
+            self._exchange = ccxt.bybit({
+                "apiKey":     api_key,
+                "secret":     api_secret,
+                "enableRateLimit": True,
+                "options": {"defaultType": "spot"},
+            })
+            # Тест підключення
+            balance = self._exchange.fetch_balance()
+            usdt_bal = float(balance.get("USDT", {}).get("free", 0))
+            log.info(f"✅ Bybit LIVE підключено | USDT баланс: ${usdt_bal:.2f}")
+        except Exception as e:
+            log.error(f"❌ Bybit LIVE помилка: {e}")
+            self._exchange = None
 
     def get_current_price(self, pair: str) -> Optional[float]:
         """
@@ -1384,11 +1401,15 @@ class ExecutorAgent:
         net   = round(gross - fee, 4)
 
         if self.cfg.is_demo:
-            # Повертаємо заморожену суму + чистий прибуток/збиток
-            self._demo_balance += amount + net
+            # net в БД = gross - total_fee (entry+exit)
+            # Але entry_fee вже списана при відкритті!
+            # Тому повертаємо: amount + gross - exit_fee тільки
+            exit_fee_only = fee  # fee переданий в _close_trade = тільки exit_fee
+            balance_delta = amount + gross - exit_fee_only
+            self._demo_balance += balance_delta
             log.info(f"💰 DEMO закриття #{t.get('id')}: "
-                     f"amount=${amount:.2f} net={net:+.2f} "
-                     f"→ balance=${self._demo_balance:.2f}")
+                     f"amount={amount:.2f} gross={gross:+.2f} exit_fee={exit_fee_only:.4f} "
+                     f"delta={balance_delta:+.2f} → balance=${self._demo_balance:.2f}")
 
         self.db.close_trade(t["id"], exit_price, gross, fee, status)
         self.tg.trade_closed(t, net)

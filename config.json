@@ -46,5 +46,8 @@
   "telegram_chat_id": "",
   "telegram_backup_db": true,
   "server_host": "0.0.0.0",
-  "server_port": 8000
+  "server_port": 8000,
+  "trailing_stop_enabled": true,
+  "trailing_activation_pct": 0.015,
+  "trailing_pct": 0.008
 }
