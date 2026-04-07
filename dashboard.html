@@ -616,6 +616,11 @@ tr.nr{animation:ra .5s ease}
 
   <!-- ═══ MOBILE TRADES PANEL ═══════════════════════════════ -->
   <div class="mp" id="mpTrades">
+    <!-- Кнопка ручного оновлення -->
+    <div style="background:var(--panel);border-bottom:1px solid var(--brd);padding:8px 14px;display:flex;justify-content:space-between;align-items:center">
+      <span style="font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--mut)">УГОДИ</span>
+      <button onclick="loadAllFromServer().then(function(){renderMobileTrades(trades);addLog('ok','✅ Оновлено')})" style="background:rgba(0,255,231,.08);border:1px solid rgba(0,255,231,.2);color:var(--acc);border-radius:6px;padding:4px 12px;font-family:'Share Tech Mono',monospace;font-size:9px;cursor:pointer">🔄 ОНОВИТИ</button>
+    </div>
     <!-- Compact stats bar -->
     <div style="background:var(--panel);border-bottom:1px solid var(--brd);padding:10px 14px;display:flex;gap:10px;flex-wrap:wrap">
       <div style="flex:1;min-width:70px">
@@ -733,10 +738,16 @@ function connectWS() {
       g('serverBar').style.display = 'none';
       addLog('ok', 'Python сервер підключено!');
       showToast('✅ Сервер підключено');
-      // Одразу завантажуємо свіжі дані з сервера
       setTimeout(function() {
-        loadAllFromServer();
-        // Форсуємо оновлення індикаторів з останніх сигналів
+        loadAllFromServer().then(function() {
+          if (trades && trades.length > 0) {
+            renderTrades(trades);
+            renderMobileTrades(trades);
+            addLog('ok', '📋 ' + trades.length + ' угод завантажено');
+          }
+        }).catch(function(e) {
+          addLog('warn', '⚠️ REST помилка: ' + e.message + ' — перевір API ключ');
+        });
         loadLastSignals();
       }, 800);
       // Завантажити угоди при підключенні
@@ -1058,6 +1069,7 @@ async function loadAllFromServer() {
     }
   } catch(e) {
     addLog('warn', '⚠️ Не вдалось завантажити дані: ' + e.message);
+    addLog('warn', '💡 Перевір API ключ в НАЛАШТУВАННЯ → API KEY');
     // Fallback — завантажуємо з кешу
     restoreFromCache();
   }
@@ -1926,6 +1938,8 @@ function renderTrades(list, prepend=false) {
 
 
 function updateStats(data) {
+  // Не перезаписувати реальні дані нулями (якщо сервер повернув пустий stats)
+  if (!data.balance && !data.net_pnl && !data.total && !data.open_trades && trades.length > 0) return;
   var net   = parseFloat(data.net_pnl   || 0);
   var fees  = parseFloat(data.fees      || 0);
   // Додаємо комісії відкритих угод якщо є
@@ -2399,7 +2413,14 @@ function showTab(tab, btn) {
   if (el) { el.style.display = 'flex'; el.classList.add('vis'); }
   currentTab = tab;
   // Оновити trades при переключенні на цей таб
-  if (tab === 'trades') renderMobileTrades(trades);
+  if (tab === 'trades') {
+    if (trades && trades.length > 0) {
+      renderMobileTrades(trades);
+    } else if (serverMode) {
+      // Якщо угод немає в пам'яті — завантажити
+      loadAllFromServer().then(function() { renderMobileTrades(trades); });
+    }
+  }
 }
 
 var currentTab = 'chart';

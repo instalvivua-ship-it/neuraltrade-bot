@@ -315,10 +315,21 @@ async def ws_endpoint(ws: WebSocket):
     log.info(f"WS підключено | клієнтів: {len(_ws_clients)}")
 
     stats = db.get_stats()
+    # Отримуємо реальний баланс з БД або executor
+    _real_balance = executor.get_balance()
+    try:
+        _brow = db.conn.execute(
+            "SELECT balance FROM balance_history ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        if _brow and float(_brow[0]) > 0:
+            _real_balance = float(_brow[0])
+    except Exception:
+        pass
+
     await ws.send_json({
         "type":    "init",
         "stats":   stats,
-        "balance": executor.get_balance(),
+        "balance": _real_balance,
         "mode":    cfg.mode,
         "paused":  tg.is_paused,
         "config":  cfg.to_dict(),

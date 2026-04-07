@@ -1353,11 +1353,15 @@ class ExecutorAgent:
         self.db.close_trade(t["id"], exit_price, gross, fee, status)
         self.tg.trade_closed(t, net)
 
+        # Зберігаємо баланс після закриття
+        self.db.save_balance(self._demo_balance, "demo" if self.cfg.is_demo else "live")
+        log.info(f"💾 Баланс збережено: ${self._demo_balance:.2f}")
+
         # Прибираємо trailing
         self._trailing.pop(t["id"], None)
 
         log.info(f"{'✅ TP' if status=='TP' else '🛑 SL'} #{t['id']} "
-                 f"{t['pair']} @ ${exit_price:,.2f} | net={net:+.2f}")
+                 f"{t['pair']} @ ${exit_price:,.2f} | net={net:+.2f} balance=${self._demo_balance:.2f}")
 
     def _get_price(self, pair: str) -> Optional[float]:
         """Отримує реальну ціну через Bybit (як TechAnalyst)."""
