@@ -47,7 +47,9 @@ tg.set_bot(type('Bot', (), {'executor': executor})())
 
 _ws_clients: Set[WebSocket] = set()
 _ws_lock     = asyncio.Lock()
-_msg_queue   = asyncio.Queue(maxsize=300)
+# thread-safe queue (scheduler thread → async broadcaster)
+import queue as _queue_module
+_msg_queue   = _queue_module.Queue(maxsize=500)
 
 # Кеш поточних режимів по парах
 _current_regimes: dict = {}
@@ -346,16 +348,23 @@ async def ws_endpoint(ws: WebSocket):
 
 
 def _queue_msg(msg: dict):
+    """Thread-safe: можна викликати з будь-якого потоку."""
     try:
         _msg_queue.put_nowait({**msg, "ts": datetime.now().isoformat()})
-    except asyncio.QueueFull:
-        pass
+    except Exception:
+        pass  # Черга повна — пропускаємо
 
 
 async def _broadcaster():
+    """Читає з thread-safe черги і надсилає всім WS клієнтам."""
     while True:
         try:
-            msg = await asyncio.wait_for(_msg_queue.get(), timeout=1.0)
+            # Неблокуюче читання з thread-safe черги
+            try:
+                msg = _msg_queue.get_nowait()
+            except Exception:
+                await asyncio.sleep(0.1)
+                continue
             if _ws_clients:
                 dead = set()
                 for ws in list(_ws_clients):
@@ -376,7 +385,8 @@ async def _broadcaster():
 # ════════════════════════════════════════════════════════════════
 
 def run_trading_cycle():
-    log.info(f"▶️  Цикл {datetime.now().strftime('%H:%M:%S')} | paused={tg.is_paused} | pairs={cfg.pairs}")
+    now = datetime.now().strftime('%H:%M:%S')
+    log.info(f"▶️  ЦИКЛ {now} | paused={tg.is_paused} | mode={cfg.mode} | pairs={cfg.pairs}")
     if tg.is_paused:
         log.info("⏸ Торгівля на паузі")
         _queue_msg({"type":"agent_log","level":"warn",
@@ -619,6 +629,8 @@ def _run_pair(pair: str):
 # ════════════════════════════════════════════════════════════════
 
 async def _price_ticker():
+    """Оновлює ціни кожні 30 сек через Bybit/CoinGecko."""
+    await asyncio.sleep(5)  # Чекаємо старту
     while True:
         try:
             prices = {}
@@ -626,7 +638,8 @@ async def _price_ticker():
                 p = tech.get_current_price(pair)
                 if p:
                     prices[pair] = round(p, 2)
-            _queue_msg({"type": "prices", "prices": prices})
+            if prices:
+                _queue_msg({"type": "prices", "prices": prices})
         except Exception:
             pass
         await asyncio.sleep(3)
@@ -756,11 +769,15 @@ def _scheduler():
         log.error(f"❌ Цикл ПОМИЛКА: {e}")
         log.error(traceback.format_exc())
 
+    cycle_count = 0
     while True:
         try:
             schedule.run_pending()
+            cycle_count += 1
+            if cycle_count % 12 == 0:  # кожну хвилину
+                log.debug(f"⏱ Scheduler alive | cycles={cycle_count}")
         except Exception as e:
-            log.error(f"Scheduler error: {e}")
+            log.error(f"Scheduler error: {e}", exc_info=True)
         time.sleep(5)
 
 

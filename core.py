@@ -418,14 +418,16 @@ class TelegramNotifier:
         if not self.enabled:
             return
         try:
-            requests.post(
+            r = requests.post(
                 f"{self._base}/sendMessage",
                 json={"chat_id": self.chat_id,
                       "text": text, "parse_mode": "HTML"},
                 timeout=8,
             )
+            if not r.ok:
+                log.warning(f"Telegram send {r.status_code}: {r.text[:100]}")
         except Exception as e:
-            log.debug(f"Telegram send: {e}")
+            log.error(f"Telegram send: {e}")
 
     def send_file(self, filepath: str, caption: str = ""):
         """Надіслати файл у Telegram (для бекапу БД)."""
@@ -467,8 +469,15 @@ class TelegramNotifier:
                     text = msg.get("text", "").strip()
                     chat = str(msg.get("chat", {}).get("id", ""))
 
-                    # Приймаємо тільки від авторизованого чату
-                    if chat != self.chat_id:
+                    # Авто-збереження chat_id при першому повідомленні
+                    if not self.chat_id:
+                        self.chat_id = chat
+                        log.info(f"📱 chat_id збережено: {chat}")
+                        self.send(f"✅ NeuralTrade підключено!\nChat ID: <code>{chat}</code>\n/help — список команд")
+
+                    # Порівнюємо без пробілів
+                    if chat.strip() != str(self.chat_id).strip():
+                        log.debug(f"Telegram: чужий chat {chat}")
                         continue
 
                     self._handle_command(text, db, cfg)
@@ -480,20 +489,25 @@ class TelegramNotifier:
         cmd = text.lower().split()[0] if text else ""
 
         if cmd == "/status":
-            stats   = db.get_stats()
-            opens   = db.get_open_trades()
-            mode    = cfg.mode.upper()
-            paused  = "⏸ ПАУЗА" if self._paused else "▶️ Активний"
+            try:
+                stats = db.get_stats()
+                opens = db.get_open_trades()
+            except Exception:
+                stats = {"total":0,"winrate":0,"net_pnl":0,"fees":0}
+                opens = []
+            mode   = cfg.mode.upper()
+            paused = "⏸ ПАУЗА" if self._paused else "▶️ Активний"
             msg = (
-                f"📊 <b>NeuralTrade Status</b>\n"
-                f"Режим: <b>{mode}</b> | {paused}\n"
-                f"━━━━━━━━━━━━\n"
-                f"Угод: {stats['total']} | WR: {stats['winrate']}%\n"
-                f"Net P&L: <code>${stats['net_pnl']:+.2f}</code>\n"
-                f"Відкрито: {len(opens)}\n"
+                f"📊 <b>NeuralTrade {mode}</b> | {paused}\n"
+                f"━━━━━━━━━━━━━━\n"
+                f"Закрито угод: {stats.get('total',0)}\n"
+                f"WR: {stats.get('winrate',0)}%\n"
+                f"Net P&L: <code>${stats.get('net_pnl',0):+.2f}</code>\n"
+                f"Комісії: <code>-${stats.get('fees',0):.4f}</code>\n"
+                f"Відкрито: {len(opens)} угод\n"
             )
-            for t in opens:
-                msg += f"  • {t['side']} {t['pair']} @ ${t['entry_price']:,.2f}\n"
+            for t in opens[:5]:
+                msg += f"  • {t.get('side','')} {t.get('pair','')} @ ${t.get('entry_price',0):,.2f}\n"
             self.send(msg)
 
         elif cmd == "/stats":
@@ -544,9 +558,9 @@ class TelegramNotifier:
             else:
                 self.send("❌ БД не знайдено")
 
-        elif cmd == "/help":
+        elif cmd in ("/start", "/help"):
             self.send(
-                "🤖 <b>NeuralTrade команди:</b>\n"
+                "🤖 <b>NeuralTrade AI v4.0 — команди:</b>\n\n"
                 "/status — баланс та позиції\n"
                 "/stats — статистика\n"
                 "/pause — пауза\n"
