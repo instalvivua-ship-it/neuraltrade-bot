@@ -309,18 +309,26 @@ class Database:
 
     def get_stats(self) -> dict:
         c = self.conn
-        total = c.execute("SELECT COUNT(*) FROM trades WHERE status!='OPEN'").fetchone()[0]
-        wins  = c.execute("SELECT COUNT(*) FROM trades WHERE outcome=1").fetchone()[0]
-        fees  = c.execute("SELECT COALESCE(SUM(fee_usd),0) FROM trades").fetchone()[0]
-        gross = c.execute("SELECT COALESCE(SUM(gross_pnl),0) FROM trades WHERE status!='OPEN'").fetchone()[0]
-        best  = c.execute("SELECT COALESCE(MAX(net_pnl),0) FROM trades").fetchone()[0]
-        worst = c.execute("SELECT COALESCE(MIN(net_pnl),0) FROM trades").fetchone()[0]
+        # Тільки ЗАКРИТІ угоди для статистики
+        total = c.execute("SELECT COUNT(*) FROM trades WHERE status NOT IN ('OPEN')").fetchone()[0]
+        wins  = c.execute("SELECT COUNT(*) FROM trades WHERE outcome=1 AND status NOT IN ('OPEN')").fetchone()[0]
+        # Комісії тільки закритих угод (відкриті ще не реалізовані)
+        fees  = c.execute("SELECT COALESCE(SUM(fee_usd),0) FROM trades WHERE status NOT IN ('OPEN')").fetchone()[0]
+        gross = c.execute("SELECT COALESCE(SUM(gross_pnl),0) FROM trades WHERE status NOT IN ('OPEN')").fetchone()[0]
+        best  = c.execute("SELECT COALESCE(MAX(net_pnl),0) FROM trades WHERE status NOT IN ('OPEN')").fetchone()[0]
+        worst = c.execute("SELECT COALESCE(MIN(net_pnl),0) FROM trades WHERE status NOT IN ('OPEN')").fetchone()[0]
+        # net_pnl = gross - fees (тільки закриті)
+        net   = round(float(gross) - float(fees), 2)
         return {
-            "total": total, "wins": wins, "losses": total-wins,
-            "winrate": round(wins/total*100, 1) if total else 0,
-            "gross_pnl": round(gross, 2), "fees": round(fees, 4),
-            "net_pnl": round(gross-fees, 2),
-            "best": round(best, 2), "worst": round(worst, 2),
+            "total":     total,
+            "wins":      wins,
+            "losses":    total - wins,
+            "winrate":   round(wins / total * 100, 1) if total else 0,
+            "gross_pnl": round(float(gross), 2),
+            "fees":      round(float(fees), 4),
+            "net_pnl":   net,
+            "best":      round(float(best), 2),
+            "worst":     round(float(worst), 2),
         }
 
     def get_winrate(self) -> float:
@@ -527,6 +535,7 @@ class TelegramNotifier:
                     "📊 /status — баланс та угоди\n"
                     "📈 /stats — статистика\n"
                     "💰 /balance — поточний баланс\n"
+                    "📋 /positions — всі відкриті позиції детально\n"
                     "⏸ /pause — зупинити торгівлю\n"
                     "▶️ /resume — продовжити\n"
                     "🔄 /mode_swap — demo/live\n"
@@ -650,6 +659,39 @@ class TelegramNotifier:
                 self.send("💰 <b>LIVE режим активовано!</b>")
                 log.warning("LIVE режим через Telegram!")
 
+            # ── /positions ────────────────────────────────────────
+            elif cmd == "/positions":
+                try:
+                    opens = db.get_open_trades()
+                    if not opens:
+                        self.send("📭 Відкритих позицій немає\n/resume щоб відновити торгівлю")
+                    else:
+                        msg = f"📊 <b>Відкриті позиції: {len(opens)}</b>\n━━━━━━━━━━━━━━\n"
+                        for t in opens:
+                            entry  = float(t.get('entry_price', 0))
+                            amount = float(t.get('amount_usd', 0))
+                            sl     = float(t.get('sl_price') or 0)
+                            tp     = float(t.get('tp_price') or 0)
+                            fee    = float(t.get('fee_usd') or 0)
+                            side   = t.get('side','')
+                            pair   = t.get('pair','')
+                            ts     = (t.get('ts_open','')[:16] or '—')
+                            conf   = float(t.get('confidence') or 0)
+                            reason = (t.get('reason') or '')[:60]
+                            e2     = '🟢' if side == 'BUY' else '🔴'
+                            msg += (
+                                f"\n{e2} <b>{side} {pair}</b>\n"
+                                f"  💵 Вхід: <code>${entry:,.2f}</code>\n"
+                                f"  💰 Сума: <code>${amount:.2f}</code>\n"
+                                f"  🛑 SL: <code>${sl:,.2f}</code>  ✅ TP: <code>${tp:,.2f}</code>\n"
+                                f"  🎯 Conf: <code>{conf:.0%}</code>\n"
+                                f"  🕐 Відкрито: <code>{ts}</code>\n"
+                                f"  💬 <i>{reason}</i>\n"
+                            )
+                        self.send(msg)
+                except Exception as e:
+                    self.send(f"❌ /positions: {e}")
+
             # ── /backup ───────────────────────────────────────────
             elif cmd == "/backup":
                 self.send_file(db.path, f"💾 Бекап БД: {db.path}")
@@ -663,26 +705,44 @@ class TelegramNotifier:
 
 
     def trade_opened(self, t: dict):
-        e = "🟢" if t["side"] == "BUY" else "🔴"
+        side = t.get("side", "BUY")
+        e = "🟢" if side == "BUY" else "🔴"
         mode_tag = "🧪" if t.get("mode") == "demo" else "💰"
-        regime = t.get("regime", "")
+        regime  = t.get("regime", "—")
+        tf      = t.get("timeframe", "1h")
+        reason  = t.get("reason", "")
+        conf    = t.get("confidence", 0)
+        sl      = t.get("sl_price") or t.get("sl") or 0
+        tp      = t.get("tp_price") or t.get("tp") or 0
+        amount  = t.get("amount_usd", 0)
+        entry   = t.get("entry_price", 0)
         self.send(
-            f"{e} <b>{t['side']} {t['pair']}</b> {mode_tag}\n"
-            f"Ціна: <code>${t['entry_price']:,.2f}</code>\n"
-            f"Обсяг: <code>${t['amount_usd']:.2f}</code>\n"
-            f"SL: <code>${t.get('sl_price',0):,.2f}</code>  "
-            f"TP: <code>${t.get('tp_price',0):,.2f}</code>\n"
-            f"Conf: <code>{t.get('confidence',0):.0%}</code> | "
-            f"Regime: <code>{regime}</code>\n"
-            f"<i>{t.get('reason','')}</i>"
+            f"{e} <b>{side} {t['pair']}</b> {mode_tag}\n"
+            f"━━━━━━━━━━━━\n"
+            f"💵 Ціна входу: <code>${entry:,.2f}</code>\n"
+            f"💰 Сума угоди: <code>${amount:.2f}</code>\n"
+            f"📊 Таймфрейм: <code>{tf}</code>\n"
+            f"🎯 Впевненість: <code>{conf:.0%}</code>\n"
+            f"🛑 SL: <code>${sl:,.2f}</code> | ✅ TP: <code>${tp:,.2f}</code>\n"
+            f"📈 Режим: <code>{regime}</code>\n"
+            f"💬 <i>{reason[:80]}</i>"
         )
 
     def trade_closed(self, t: dict, net: float):
         e = "✅" if net > 0 else "❌"
+        status   = t.get("status", "CLOSED")
+        entry    = t.get("entry_price", 0)
+        amount   = t.get("amount_usd", 0)
+        fee      = t.get("fee_usd", 0)
+        tf       = t.get("timeframe", "1h")
+        pct      = (net / amount * 100) if amount else 0
         self.send(
-            f"{e} <b>ЗАКРИТО {t['pair']}</b>\n"
-            f"Net P&L: <code>${net:+.2f}</code>\n"
-            f"Комісія: <code>-${t.get('fee_usd',0):.4f}</code>"
+            f"{e} <b>ЗАКРИТО {t.get('side','')} {t['pair']}</b> [{status}]\n"
+            f"━━━━━━━━━━━━\n"
+            f"💵 Ціна входу: <code>${entry:,.2f}</code>\n"
+            f"💰 Сума: <code>${amount:.2f}</code> | TF: <code>{tf}</code>\n"
+            f"{'✅' if net > 0 else '❌'} Net P&L: <code>${net:+.2f}</code> ({pct:+.1f}%)\n"
+            f"💸 Комісія: <code>-${fee:.4f}</code>"
         )
 
     def ml_update(self, pair: str, acc: float, n: int):

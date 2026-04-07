@@ -121,8 +121,10 @@ class TechAnalystAgent:
         # ── CoinGecko резервний ────────────────────────────────
         try:
             sym_map = {
-                "BTC/USDT": "bitcoin", "ETH/USDT": "ethereum",
-                "SOL/USDT": "solana",  "BNB/USDT": "binancecoin",
+                "BTC/USDT": "bitcoin",      "ETH/USDT": "ethereum",
+                "SOL/USDT": "solana",        "BNB/USDT": "binancecoin",
+                "XRP/USDT": "ripple",        "ADA/USDT": "cardano",
+                "DOGE/USDT": "dogecoin",     "AVAX/USDT": "avalanche-2",
             }
             cg_id = sym_map.get(pair)
             if cg_id:
@@ -948,8 +950,14 @@ class RiskManagerAgent:
             return {"allowed": False, "reason": f"Макс. угод {self.cfg.max_open_trades}"}
 
         # ── Вже є угода по цій парі ─────────────────────────────
-        if any(t["pair"] == pair and t["status"] == "OPEN" for t in open_trades):
-            return {"allowed": False, "reason": f"{pair} вже відкрита"}
+        # Дозволяємо до 2 угод на пару (різний напрямок)
+        same_pair = [t for t in open_trades if t["pair"] == pair and t["status"] == "OPEN"]
+        if len(same_pair) >= 2:
+            return {"allowed": False, "reason": f"{pair} вже 2 угоди"}
+        # Якщо вже є угода в тому ж напрямку — не відкриваємо
+        same_dir = [t for t in same_pair if t.get("side") == decision.get("action", "")]
+        if same_dir:
+            return {"allowed": False, "reason": f"{pair} {decision.get('action')} вже відкрита"}
 
         # ── Confidence threshold ─────────────────────────────────
         if decision["confidence"] < (self.cfg.min_confidence or 0.62):
@@ -1237,7 +1245,13 @@ class ExecutorAgent:
                 "trail_pct":    self.cfg.trailing_stop_trail_pct or 0.01,
             }
 
-        self.tg.trade_opened({**trade_data, "id": trade_id})
+        self.tg.trade_opened({
+            **trade_data,
+            "id":        trade_id,
+            "timeframe": self.cfg.timeframe or "1h",
+            "sl_price":  sl,
+            "tp_price":  tp,
+        })
         log.info(f"✅ #{trade_id} відкрито: {side} {pair} @ ${price:,.2f} "
                  f"SL=${sl:.2f} TP=${tp:.2f}")
         return trade_id

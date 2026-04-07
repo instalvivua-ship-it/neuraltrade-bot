@@ -805,6 +805,10 @@ function handleServerMsg(msg) {
           else { badge4.style.display = 'none'; }
         }
         addLog('ok', '📋 ' + msg.trades.length + ' угод (' + openT4.length + ' відкрито)');
+        // Повторний рендер через 500мс — гарантія що DOM готовий
+        setTimeout(function() {
+          renderMobileTrades(trades);
+        }, 500);
       }
       if (msg.mode) updateModeUI(msg.mode);
       if (msg.config && msg.config.min_trades_for_train) {
@@ -905,14 +909,11 @@ function handleServerMsg(msg) {
     case 'stats_update':
       updateStats(msg);
       if (msg.open_trades && msg.open_trades.length > 0) {
-        // Оновлюємо глобальний масив угод
         trades = msg.open_trades;
         renderTrades(msg.open_trades, false);
         renderMobileTrades(msg.open_trades);
-      } else {
-        // Завантажуємо повний список (відкриті + закриті)
-        fetchTrades();
       }
+      // НЕ викликаємо fetchTrades тут — це робить loadAllFromServer кожні 2 хв
       // Оновити ML stats якщо є
       if (msg.ml_samples !== undefined) {
         mlTradesN = msg.ml_samples;
@@ -972,7 +973,11 @@ async function loadAllFromServer() {
   if (!apiUrl) return;
   var apiKey = localStorage.getItem('neuraltrade_api_key') || localStorage.getItem('nt_api_key') || '';
 
-  addLog('info', '📥 Завантаження всіх даних з сервера...');
+  addLog('info', '📥 Завантаження даних... (сервер: ' + apiUrl.replace('https://','') + ')');
+  if (!apiKey) {
+    addLog('warn', '⚠️ API ключ не введено! Відкрий НАЛАШТУВАННЯ → API KEY');
+    return;
+  }
 
   // Паралельно завантажуємо stats і всі угоди
   try {
@@ -1866,7 +1871,10 @@ function renderMobileTrades(list) {
 
 function renderTrades(list, prepend=false) {
   const tbody = g('tradesBody');
-  if (!tbody || !list) return;
+  if (!list) return;
+  // Завжди рендеримо мобільну версію
+  if (list.length > 0) { trades = list; renderMobileTrades(list); }
+  if (!tbody) return;  // десктопна таблиця може бути відсутня
   // Зберігаємо список для mobile
   trades = list;
   if (currentTab === 'trades') renderMobileTrades(list);
@@ -1938,8 +1946,8 @@ function renderTrades(list, prepend=false) {
 
 
 function updateStats(data) {
-  // Не перезаписувати реальні дані нулями (якщо сервер повернув пустий stats)
-  if (!data.balance && !data.net_pnl && !data.total && !data.open_trades && trades.length > 0) return;
+  // Пропускати тільки якщо взагалі немає даних
+  if (!data || typeof data !== 'object') return;
   var net   = parseFloat(data.net_pnl   || 0);
   var fees  = parseFloat(data.fees      || 0);
   // Додаємо комісії відкритих угод якщо є
