@@ -103,6 +103,9 @@ _RATE_WINDOW = 60  # за 60 секунд
 
 def _check_rate_limit(ip: str) -> bool:
     """True = дозволено, False = перевищено ліміт."""
+    # Railway internal IPs — завжди дозволено
+    if ip.startswith("100.64.") or ip.startswith("127.") or ip == "::1":
+        return True
     now = time.time()
     _rate_data[ip] = [t for t in _rate_data[ip] if now - t < _RATE_WINDOW]
     if len(_rate_data[ip]) >= _RATE_LIMIT:
@@ -110,39 +113,14 @@ def _check_rate_limit(ip: str) -> bool:
     _rate_data[ip].append(now)
     return True
 
-async def verify_api_key(
-    request: Request,
-    x_api_key: Optional[str] = Header(None),
-):
-    """
-    Перевірка API ключа + Rate Limiting.
-    Ключ передається в заголовку: X-API-Key: <ключ>
-    """
-    ip = request.client.host if request.client else "unknown"
-
-    # Rate limiting
-    if not _check_rate_limit(ip):
-        log.warning(f"Rate limit перевищено: {ip}")
-        raise HTTPException(429, "Too Many Requests — зачекай хвилину")
-
-    # API Key перевірка
-    if not x_api_key:
-        raise HTTPException(401, "Потрібен X-API-Key заголовок")
-
-    # Constant-time порівняння (захист від timing attack)
-    if not secrets.compare_digest(x_api_key.strip(), _SERVER_API_KEY):
-        log.warning(f"Невірний API ключ від {ip}")
-        raise HTTPException(403, "Невірний API ключ")
-
-    return True
-
-# Публічні endpoints (без auth): тільки /health
-# Всі інші — захищені через Depends(verify_api_key)
-
-
-# ════════════════════════════════════════════════════════════════
-#  REST API
-# ════════════════════════════════════════════════════════════════
+async def verify_api_key(request: Request):
+    key = request.headers.get("X-API-Key") or request.query_params.get("api_key")
+    if not secrets.compare_digest(key or "", API_KEY):
+        client = request.client.host if request.client else "unknown"
+        # Мовчки ігноруємо Railway internal (100.64.x.x) та localhost
+        if not (client.startswith("100.64.") or client.startswith("127.") or client == "::1"):
+            log.warning(f"Невірний API ключ від {client}")
+        raise HTTPException(status_code=401, detail="Invalid API key")
 
 @app.get("/health")
 def health():
@@ -454,12 +432,14 @@ def run_fast_cycle():
             if price and price > 0:
                 prices[pair] = round(price, 4)
 
-                # Перевіряємо чи ціна рухається суттєво
-                prev = _last_prices.get(pair, price)
-                move = abs(price - prev) / prev if prev > 0 else 0
-                if move > _price_move_threshold:
-                    trigger_full = True
-                    log.info(f"⚡ {pair}: рух ціни {move*100:.2f}% → повний аналіз")
+                # Тригер тільки якщо є попередня РЕАЛЬНА ціна (не симуляція)
+                if pair in _last_prices:
+                    prev = _last_prices[pair]
+                    move = abs(price - prev) / prev if prev > 0 else 0
+                    # Ігноруємо рухи > 10% (це симуляція переключилась на реальну ціну)
+                    if 0 < move <= 0.10 and move > _price_move_threshold:
+                        trigger_full = True
+                        log.info(f"⚡ {pair}: рух ціни {move*100:.2f}% → повний аналіз")
                 _last_prices[pair] = price
         except Exception:
             pass
@@ -498,7 +478,10 @@ def _run_pair(pair: str):
     # ── Tech ─────────────────────────────────────────────────
     tech_s = tech.analyze(pair)
     if not tech_s:
+        log.warning(f"Tech.analyze({pair}) повернув None!")
         return
+    log.info(f"📊 {pair}: signal={tech_s.get('signal')} RSI={tech_s.get('rsi',0):.1f} "
+             f"conf={tech_s.get('confidence',0):.2f} regime={tech_s.get('regime')}")
 
     regime = tech_s.get("regime", "sideways")
     _current_regimes[pair] = {
@@ -578,7 +561,9 @@ def _run_pair(pair: str):
     })
 
     if not risk_ok["allowed"]:
+        log.info(f"🛑 {pair}: ризик ЗАБЛОКОВАНО — {risk_ok['reason']}")
         return
+    log.info(f"✅ {pair}: ризик ОК, відкриваємо {decision['action']} conf={decision['confidence']:.2f}")
 
     # ── Execute ──────────────────────────────────────────────
     atr    = tech_s.get("atr", tech_s["price"] * 0.012)
@@ -604,6 +589,7 @@ def _run_pair(pair: str):
     )
 
     if trade_id:
+        log.info(f"🎯 УГОДА #{trade_id} ВІДКРИТА: {decision['action']} {pair} @ ${tech_s['price']:.2f} amount=${amount:.2f}")
         _queue_msg({
             "type":       "trade_opened",
             "trade_id":   trade_id,
