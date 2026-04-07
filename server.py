@@ -113,14 +113,32 @@ def _check_rate_limit(ip: str) -> bool:
     _rate_data[ip].append(now)
     return True
 
-async def verify_api_key(request: Request):
-    key = request.headers.get("X-API-Key") or request.query_params.get("api_key")
-    if not secrets.compare_digest(key or "", API_KEY):
-        client = request.client.host if request.client else "unknown"
-        # Мовчки ігноруємо Railway internal (100.64.x.x) та localhost
-        if not (client.startswith("100.64.") or client.startswith("127.") or client == "::1"):
-            log.warning(f"Невірний API ключ від {client}")
-        raise HTTPException(status_code=401, detail="Invalid API key")
+async def verify_api_key(
+    request: Request,
+    x_api_key: Optional[str] = Header(None),
+):
+    """Перевірка API ключа з підтримкою Railway internal IPs."""
+    ip = request.client.host if request.client else "unknown"
+    is_internal = ip.startswith("100.64.") or ip.startswith("127.") or ip == "::1"
+
+    # Rate limiting (не для internal)
+    if not is_internal and not _check_rate_limit(ip):
+        log.warning(f"Rate limit перевищено: {ip}")
+        raise HTTPException(429, "Too Many Requests")
+
+    key = x_api_key or request.headers.get("X-API-Key") or request.query_params.get("api_key")
+
+    if not key:
+        if not is_internal:
+            log.debug(f"Запит без API ключа від {ip}")
+        raise HTTPException(401, "Потрібен X-API-Key заголовок")
+
+    if not secrets.compare_digest(key.strip(), _SERVER_API_KEY):
+        if not is_internal:
+            log.warning(f"Невірний API ключ від {ip}")
+        raise HTTPException(403, "Невірний API ключ")
+
+    return True
 
 @app.get("/health")
 def health():
