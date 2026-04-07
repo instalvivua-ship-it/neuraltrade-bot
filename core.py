@@ -486,89 +486,139 @@ class TelegramNotifier:
             time.sleep(5)
 
     def _handle_command(self, text: str, db, cfg):
+        """Обробляє команди Telegram бота."""
         cmd = text.lower().split()[0] if text else ""
+        log.info(f"📱 Telegram команда: {cmd}")
 
-        if cmd == "/status":
-            try:
-                stats = db.get_stats()
-                opens = db.get_open_trades()
-            except Exception:
-                stats = {"total":0,"winrate":0,"net_pnl":0,"fees":0}
-                opens = []
-            mode   = cfg.mode.upper()
-            paused = "⏸ ПАУЗА" if self._paused else "▶️ Активний"
-            msg = (
-                f"📊 <b>NeuralTrade {mode}</b> | {paused}\n"
-                f"━━━━━━━━━━━━━━\n"
-                f"Закрито угод: {stats.get('total',0)}\n"
-                f"WR: {stats.get('winrate',0)}%\n"
-                f"Net P&L: <code>${stats.get('net_pnl',0):+.2f}</code>\n"
-                f"Комісії: <code>-${stats.get('fees',0):.4f}</code>\n"
-                f"Відкрито: {len(opens)} угод\n"
-            )
-            for t in opens[:5]:
-                msg += f"  • {t.get('side','')} {t.get('pair','')} @ ${t.get('entry_price',0):,.2f}\n"
-            self.send(msg)
+        try:
+            # ── /start, /help ─────────────────────────────────────
+            if cmd in ("/start", "/help"):
+                self.send(
+                    "🤖 <b>NeuralTrade AI v4.0</b>\n\n"
+                    "📊 /status — баланс та угоди\n"
+                    "📈 /stats — статистика\n"
+                    "💰 /balance — поточний баланс\n"
+                    "⏸ /pause — зупинити торгівлю\n"
+                    "▶️ /resume — продовжити\n"
+                    "🔄 /mode_swap — demo/live\n"
+                    "🚨 /panic_close — закрити всі угоди\n"
+                    "💾 /backup — файл БД\n"
+                )
 
-        elif cmd == "/stats":
-            stats = db.get_stats()
-            self.daily_report(stats)
-
-        elif cmd == "/pause":
-            self._paused = True
-            self.send("⏸ <b>Торгівля призупинена</b>\n/resume для відновлення")
-            log.info("⏸ Торгівля призупинена через Telegram")
-
-        elif cmd == "/resume":
-            self._paused = False
-            self.send("▶️ <b>Торгівля відновлена</b>")
-            log.info("▶️ Торгівля відновлена через Telegram")
-
-        elif cmd == "/mode_swap":
-            new_mode = "live" if cfg.is_demo else "demo"
-            if new_mode == "live":
-                self.send("⚠️ Підтверди перехід в LIVE: надішли /confirm_live")
-                return
-            cfg._data["mode"] = new_mode
-            cfg.save()
-            self.send(f"🔄 Режим змінено: <b>{new_mode.upper()}</b>")
-            log.info(f"Режим: {new_mode}")
-
-        elif cmd == "/confirm_live":
-            cfg._data["mode"] = "live"
-            cfg.save()
-            self.send("💰 <b>LIVE режим активовано!</b>\n⚠️ Реальні гроші!")
-            log.warning("LIVE режим активовано через Telegram!")
-
-        elif cmd == "/panic_close":
-            self.send("🚨 <b>PANIC CLOSE!</b> Закриваю всі угоди...")
-            log.critical("PANIC CLOSE від Telegram!")
-            if self._bot_ref:
+            # ── /status ───────────────────────────────────────────
+            elif cmd == "/status":
                 try:
-                    self._bot_ref.executor.check_open_trades()
-                    self._paused = True
+                    stats = db.get_stats()
+                    opens = db.get_open_trades()
+                except Exception:
+                    stats = {"total": 0, "winrate": 0, "net_pnl": 0, "fees": 0}
+                    opens = []
+                mode   = cfg.mode.upper()
+                paused = "⏸ ПАУЗА" if self._paused else "▶️ Активний"
+                bal    = cfg.initial_demo_balance or 1000
+                try:
+                    from agents import ExecutorAgent
+                    bal = float(db.conn.execute(
+                        "SELECT COALESCE(balance,1000) FROM balance_history ORDER BY id DESC LIMIT 1"
+                    ).fetchone()[0])
+                except Exception:
+                    pass
+                msg = (
+                    f"📊 <b>NeuralTrade {mode}</b> | {paused}\n"
+                    f"━━━━━━━━━━━━━━\n"
+                    f"💰 Баланс: <code>${bal:.2f}</code>\n"
+                    f"Угод закрито: {stats.get('total', 0)}\n"
+                    f"WR: {stats.get('winrate', 0)}%\n"
+                    f"Net P&L: <code>${stats.get('net_pnl', 0):+.2f}</code>\n"
+                    f"Відкрито: {len(opens)} угод\n"
+                )
+                for t in opens[:5]:
+                    msg += f"  • {t.get('side','')} {t.get('pair','')} @ ${t.get('entry_price', 0):,.2f}\n"
+                self.send(msg)
+
+            # ── /balance ──────────────────────────────────────────
+            elif cmd == "/balance":
+                try:
+                    stats = db.get_stats()
+                    opens = db.get_open_trades()
+                    bal_row = db.conn.execute(
+                        "SELECT COALESCE(balance,1000) FROM balance_history ORDER BY id DESC LIMIT 1"
+                    ).fetchone()
+                    bal = float(bal_row[0]) if bal_row else (cfg.initial_demo_balance or 1000)
+                except Exception:
+                    bal   = cfg.initial_demo_balance or 1000
+                    stats = {"net_pnl": 0, "fees": 0}
+                    opens = []
+                self.send(
+                    f"💰 <b>Баланс: ${bal:.2f}</b>\n"
+                    f"Net P&L: <code>${stats.get('net_pnl', 0):+.2f}</code>\n"
+                    f"Комісії: <code>-${stats.get('fees', 0):.4f}</code>\n"
+                    f"Відкрито: {len(opens)} угод"
+                )
+
+            # ── /stats ────────────────────────────────────────────
+            elif cmd == "/stats":
+                self.daily_report(db.get_stats())
+
+            # ── /pause ────────────────────────────────────────────
+            elif cmd == "/pause":
+                self._paused = True
+                self.send("⏸ <b>Торгівля призупинена</b>\n/resume для відновлення")
+                log.info("⏸ Торгівля призупинена через Telegram")
+
+            # ── /resume ───────────────────────────────────────────
+            elif cmd == "/resume":
+                self._paused = False
+                self.send("▶️ <b>Торгівля відновлена!</b>")
+                log.info("▶️ Торгівля відновлена через Telegram")
+
+            # ── /panic_close ──────────────────────────────────────
+            elif cmd == "/panic_close":
+                self._paused = True
+                try:
+                    opens = db.get_open_trades()
+                    count = len(opens)
+                    # Примусово закриваємо всі угоди в БД
+                    for t in opens:
+                        try:
+                            db.close_trade(t["id"], t.get("entry_price", 0),
+                                         "PANIC", t.get("entry_price", 0))
+                        except Exception:
+                            pass
+                    self.send(
+                        f"🚨 <b>PANIC CLOSE виконано!</b>\n"
+                        f"Закрито угод: {count}\n"
+                        f"Торгівля зупинена. /resume для відновлення"
+                    )
+                    log.critical(f"PANIC CLOSE: закрито {count} угод")
                 except Exception as e:
-                    log.error(f"Panic close: {e}")
-            self.send("✅ Угоди закрито. Бот на паузі.\n/resume для відновлення")
+                    self.send(f"🚨 Panic close: {e}")
 
-        elif cmd == "/backup":
-            if os.path.exists(db.path):
-                ts = datetime.now().strftime("%Y-%m-%d_%H-%M")
-                self.send_file(db.path, f"📦 Backup {ts}")
+            # ── /mode_swap ────────────────────────────────────────
+            elif cmd == "/mode_swap":
+                new_mode = "live" if cfg.mode == "demo" else "demo"
+                if new_mode == "live":
+                    self.send("⚠️ Підтверди: /confirm_live")
+                    return
+                cfg._data["mode"] = new_mode
+                self.send(f"🔄 Режим: <b>{new_mode.upper()}</b>")
+
+            elif cmd == "/confirm_live":
+                cfg._data["mode"] = "live"
+                self.send("💰 <b>LIVE режим активовано!</b>")
+                log.warning("LIVE режим через Telegram!")
+
+            # ── /backup ───────────────────────────────────────────
+            elif cmd == "/backup":
+                self.send_file(db.path, f"💾 Бекап БД: {db.path}")
+
             else:
-                self.send("❌ БД не знайдено")
+                self.send(f"❓ Невідома команда: {cmd}\n/help — список команд")
 
-        elif cmd in ("/start", "/help"):
-            self.send(
-                "🤖 <b>NeuralTrade AI v4.0 — команди:</b>\n\n"
-                "/status — баланс та позиції\n"
-                "/stats — статистика\n"
-                "/pause — пауза\n"
-                "/resume — відновити\n"
-                "/mode_swap — demo ↔ live\n"
-                "/panic_close — закрити все!\n"
-                "/backup — надіслати БД\n"
-            )
+        except Exception as e:
+            log.error(f"_handle_command {cmd}: {e}", exc_info=True)
+            self.send(f"❌ Помилка: {e}")
+
 
     def trade_opened(self, t: dict):
         e = "🟢" if t["side"] == "BUY" else "🔴"
