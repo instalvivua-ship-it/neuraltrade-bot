@@ -607,21 +607,34 @@ class TelegramNotifier:
                 try:
                     opens = db.get_open_trades()
                     count = len(opens)
-                    # Примусово закриваємо всі угоди в БД
+                    closed_count = 0
                     for t in opens:
                         try:
-                            db.close_trade(t["id"], t.get("entry_price", 0),
-                                         "PANIC", t.get("entry_price", 0))
-                        except Exception:
-                            pass
+                            # close_trade(tid, exit_price, gross, fee, status)
+                            entry = float(t.get("entry_price", 0))
+                            amt   = float(t.get("amount_usd", 0))
+                            fee   = float(t.get("fee_usd", 0))
+                            # Закриваємо по ціні входу (нульовий P&L)
+                            db.close_trade(
+                                t["id"],
+                                entry,   # exit_price = entry (нейтрально)
+                                0.0,     # gross = 0
+                                fee,     # fee
+                                "PANIC"  # status
+                            )
+                            closed_count += 1
+                            log.info(f"🚨 PANIC: закрито #{t['id']} {t.get('pair')}")
+                        except Exception as e:
+                            log.error(f"PANIC close #{t.get('id')}: {e}")
                     self.send(
                         f"🚨 <b>PANIC CLOSE виконано!</b>\n"
-                        f"Закрито угод: {count}\n"
+                        f"Закрито угод: {closed_count}/{count}\n"
                         f"Торгівля зупинена. /resume для відновлення"
                     )
-                    log.critical(f"PANIC CLOSE: закрито {count} угод")
+                    log.critical(f"PANIC CLOSE: закрито {closed_count}/{count} угод")
                 except Exception as e:
-                    self.send(f"🚨 Panic close: {e}")
+                    self.send(f"🚨 Panic close помилка: {e}")
+                    log.error(f"panic_close: {e}", exc_info=True)
 
             # ── /mode_swap ────────────────────────────────────────
             elif cmd == "/mode_swap":
