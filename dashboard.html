@@ -886,11 +886,16 @@ function handleServerMsg(msg) {
 
     case 'stats_update':
       updateStats(msg);
-      // Оновити всі угоди (відкриті + закриті)
+      // Оновити всі угоди
       if (msg.open_trades && msg.open_trades.length > 0) {
         renderTrades(msg.open_trades, false);
+        renderMobileTrades(msg.open_trades);
+      } else if (msg.open_count === 0) {
+        // Немає угод - показати повідомлення
+        renderTrades([]);
+        renderMobileTrades([]);
       } else {
-        fetchTrades(); // Завантажити з сервера
+        fetchTrades();
       }
       // Оновити ML stats якщо є
       if (msg.ml_samples !== undefined) {
@@ -1005,6 +1010,9 @@ async function loadAllFromServer() {
         if (mkrs.length > 20) mkrs = mkrs.slice(-20);
         draw();
         addLog('ok', '📋 Завантажено ' + allTrades.length + ' угод');
+        // Рендеримо в обидва місця: десктоп таблиця + мобільні картки
+        renderTrades(allTrades);
+        renderMobileTrades(allTrades);
         // Зберігаємо в localStorage
         try { localStorage.setItem('nt_trades_cache', JSON.stringify(allTrades.slice(0, 500))); } catch(e) {}
         // Одразу перераховуємо stats з реальних даних
@@ -2482,10 +2490,17 @@ setInterval(function() {
   fetch(apiUrl + '/health').catch(function(){});
 }, 180000);
 
-// ── Авто-синхронізація кожні 2 хв (для швидшого збору ML даних) ─
+// ── Авто-синхронізація кожні 2 хв ─────────────────────────────
 setInterval(function() {
   if (serverMode) loadAllFromServer();
 }, 120000);
+
+// ── Live P&L оновлення кожні 5 сек коли на таб УГОДИ ──────────
+setInterval(function() {
+  if (currentTab === 'trades' && trades && trades.length > 0) {
+    renderMobileTrades(trades);
+  }
+}, 5000);
 })();
 </script>
 </body>
