@@ -428,7 +428,7 @@ def run_trading_cycle():
 # ════════════════════════════════════════════════════════════════
 
 _last_prices: dict = {}       # пара → остання ціна
-_price_move_threshold = 0.004  # 0.4% руху → повний аналіз
+_price_move_threshold = 0.008  # 0.8% руху → повний аналіз (знижено шум)
 
 def run_fast_cycle():
     """
@@ -458,6 +458,15 @@ def run_fast_cycle():
                     if 0 < move <= 0.10 and move > _price_move_threshold:
                         trigger_full = True
                         log.info(f"⚡ {pair}: рух ціни {move*100:.2f}% → повний аналіз")
+                        # Скидаємо OHLCV кеш для свіжих даних
+                        try:
+                            tech._ohlcv_cache.pop(pair, None)
+                            tech._ohlcv_cache.pop(f"{pair}_5m", None)
+                            tech._ohlcv_cache.pop(f"{pair}_15m", None)
+                        except Exception:
+                            pass
+                # Оновлюємо базову ціну ЗАВЖДИ (навіть після тригеру)
+                # щоб наступний цикл порівнював від нової ціни
                 _last_prices[pair] = price
         except Exception:
             pass
@@ -480,12 +489,16 @@ def run_fast_cycle():
     except Exception as e:
         log.debug(f"fast_cycle check_trades: {e}")
 
-    # Якщо великий рух — запускаємо повний аналіз
+    # Якщо великий рух — запускаємо повний аналіз (не частіше 1 разу/30 сек)
     if trigger_full:
-        try:
-            run_trading_cycle()
-        except Exception as e:
-            log.error(f"trigger_full error: {e}")
+        now = time.time()
+        last = getattr(run_fast_cycle, '_last_full', 0)
+        if now - last >= 30:
+            run_fast_cycle._last_full = now
+            try:
+                run_trading_cycle()
+            except Exception as e:
+                log.error(f"trigger_full error: {e}")
 
 
 def _run_pair(pair: str):
