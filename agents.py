@@ -946,18 +946,31 @@ class RiskManagerAgent:
             return {"allowed": False, "reason": "⚠️ Volatility spike — пауза"}
 
         # ── Max open trades ──────────────────────────────────────
-        if len(open_trades) >= (self.cfg.max_open_trades or 3):
-            return {"allowed": False, "reason": f"Макс. угод {self.cfg.max_open_trades}"}
+        # Перевіряємо ліміт по таймфреймам
+        current_tf = self.cfg._data.get("timeframe", "1h")
+        max_per_tf = self.cfg._data.get("max_trades_per_tf", 10)
+        trades_this_tf = [t for t in open_trades if t.get("timeframe") == current_tf]
+        if len(trades_this_tf) >= max_per_tf:
+            return {"allowed": False, "reason": f"Ліміт {max_per_tf} угод на {current_tf}"}
+        # Загальний ліміт
+        if len(open_trades) >= (self.cfg.max_open_trades or 30):
+            return {"allowed": False, "reason": f"Загальний ліміт {self.cfg.max_open_trades} угод"}
 
         # ── Вже є угода по цій парі ─────────────────────────────
-        # Дозволяємо до 2 угод на пару (різний напрямок)
-        same_pair = [t for t in open_trades if t["pair"] == pair and t["status"] == "OPEN"]
-        if len(same_pair) >= 2:
-            return {"allowed": False, "reason": f"{pair} вже 2 угоди"}
-        # Якщо вже є угода в тому ж напрямку — не відкриваємо
-        same_dir = [t for t in same_pair if t.get("side") == decision.get("action", "")]
+        # ── Per-TF ліміт ─────────────────────────────────────────
+        cur_tf  = tech_s.get("timeframe", self.cfg.timeframe or "1h")
+        max_ptf = self.cfg._data.get("max_trades_per_tf", 10)
+        same_tf = [t for t in open_trades if t.get("timeframe") == cur_tf]
+        if len(same_tf) >= max_ptf:
+            return {"allowed": False, "reason": f"[{cur_tf}] ліміт {max_ptf} угод"}
+
+        # ── Per-pair per-direction ────────────────────────────────
+        same_dir = [t for t in open_trades
+                    if t["pair"] == pair
+                    and t.get("side") == decision.get("action", "")
+                    and t.get("timeframe") == cur_tf]
         if same_dir:
-            return {"allowed": False, "reason": f"{pair} {decision.get('action')} вже відкрита"}
+            return {"allowed": False, "reason": f"{pair} [{cur_tf}] {decision.get('action')} вже відкрита"}
 
         # ── Confidence threshold ─────────────────────────────────
         if decision["confidence"] < (self.cfg.min_confidence or 0.62):
@@ -1095,19 +1108,18 @@ class ExecutorAgent:
                 return float(row[0])
         except Exception:
             pass
-        # Рахуємо з угод якщо немає збереженого балансу
+        # Рахуємо точний баланс = початковий + сума всіх закритих угод (PnL - fees)
         try:
-            # initial - заморожені відкриті - комісії закритих + прибуток закритих
-            open_trades = db.get_open_trades()
             stats = db.get_stats()
-            frozen = sum(float(t.get("amount_usd", 0)) for t in open_trades)
-            net_pnl = float(stats.get("net_pnl", 0))
-            fees = float(stats.get("fees", 0))
-            # Баланс = початковий - заморожено + чистий PnL
-            bal = initial - frozen + net_pnl
-            if bal > 0:
+            open_trades = db.get_open_trades()
+            closed_net   = float(stats.get("net_pnl", 0))   # закриті угоди
+            open_fees    = sum(float(t.get("fee_usd",0)) for t in open_trades)
+            open_frozen  = sum(float(t.get("amount_usd",0)) for t in open_trades)
+            # Баланс = початковий + прибуток закритих - суми відкритих - комісії відкритих
+            bal = initial + closed_net - open_frozen - open_fees
+            if bal > 10:
                 log.info(f"📊 Баланс розраховано: ${bal:.2f} "
-                         f"(frozen=${frozen:.2f} pnl=${net_pnl:.2f})")
+                         f"(closed_net={closed_net:+.2f} frozen=${open_frozen:.2f})")
                 return bal
         except Exception as e:
             log.debug(f"Balance calc: {e}")
@@ -1209,13 +1221,23 @@ class ExecutorAgent:
             binance_order_id = str(order.get("id", ""))
             log.info(f"⚡ LIVE #{binance_order_id}: {side} {pair} @ ${price:,.2f}")
         else:
-            self._demo_balance -= entry_fee
-            log.info(f"🧪 DEMO {side} {pair}: {units:.6f} @ ${price:,.2f} "
-                     f"${amount_usd:.2f} fee=-${entry_fee:.4f}")
+            # ⚠️ ВИПРАВЛЕННЯ БАЛАНСУ: відраховуємо СУМУ угоди + комісію
+            cost = amount_usd + entry_fee
+            if self._demo_balance < cost:
+                log.warning(f"❌ Недостатньо балансу: є ${self._demo_balance:.2f}, треба ${cost:.2f}")
+                return None
+            self._demo_balance -= cost
+            self.db.save_balance(self._demo_balance, "demo")
+            log.info(f"🧪 DEMO {side} {pair} [{self.cfg.timeframe}]: "
+                     f"{units:.6f} @ ${price:,.2f} "
+                     f"сума=${amount_usd:.2f} fee=-${entry_fee:.4f} "
+                     f"→ баланс=${self._demo_balance:.2f}")
 
         trade_data = {
-            "ts_open": datetime.now().isoformat(),
-            "pair": pair, "side": side,
+            "ts_open":   datetime.now().isoformat(),
+            "pair":      pair,
+            "side":      side,
+            "timeframe": self.cfg.timeframe or "1h",
             "entry_price": price,
             "amount_usd": amount_usd,
             "units": units,
@@ -1362,7 +1384,11 @@ class ExecutorAgent:
         net   = round(gross - fee, 4)
 
         if self.cfg.is_demo:
+            # Повертаємо заморожену суму + чистий прибуток/збиток
             self._demo_balance += amount + net
+            log.info(f"💰 DEMO закриття #{t.get('id')}: "
+                     f"amount=${amount:.2f} net={net:+.2f} "
+                     f"→ balance=${self._demo_balance:.2f}")
 
         self.db.close_trade(t["id"], exit_price, gross, fee, status)
         self.tg.trade_closed(t, net)

@@ -767,8 +767,36 @@ def _scheduler():
 
     interval = cfg.cycle_interval_minutes or 5
 
-    # Повний аналіз (RSI/MACD/ML/Debate) — кожні N хвилин
-    schedule.every(interval).minutes.do(run_trading_cycle)
+    # ── Мультитаймфрейм торгівля ─────────────────────────────────
+    # Кожен TF запускається з різним інтервалом
+    tfs = cfg._data.get("timeframes", ["1h"])
+
+    def make_tf_cycle(tf):
+        def _cycle():
+            original_tf = cfg._data.get("timeframe", "1h")
+            cfg._data["timeframe"] = tf
+            try:
+                run_trading_cycle()
+            finally:
+                cfg._data["timeframe"] = original_tf
+        return _cycle
+
+    # 5m — кожні 5 хв
+    if "5m" in tfs:
+        schedule.every(5).minutes.do(make_tf_cycle("5m"))
+        log.info("⏱ Scheduler: 5m цикл кожні 5 хв")
+    # 15m — кожні 15 хв
+    if "15m" in tfs:
+        schedule.every(15).minutes.do(make_tf_cycle("15m"))
+        log.info("⏱ Scheduler: 15m цикл кожні 15 хв")
+    # 1h — кожну годину
+    if "1h" in tfs:
+        schedule.every(60).minutes.do(make_tf_cycle("1h"))
+        log.info("⏱ Scheduler: 1h цикл кожну годину")
+
+    # Fallback якщо немає мультитаймфрейм
+    if not tfs or len(tfs) == 0:
+        schedule.every(interval).minutes.do(run_trading_cycle)
 
     # ⚡ Швидкий цикл — ціни + SL/TP кожні 30 секунд
     schedule.every(30).seconds.do(run_fast_cycle)
