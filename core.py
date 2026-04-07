@@ -537,16 +537,17 @@ class TelegramNotifier:
                     "📊 /status — баланс та угоди\n"
                     "📈 /stats — статистика\n"
                     "💰 /balance — поточний баланс\n"
-                    "📋 /positions — відкриті позиції детально\n"
-                    "📁 /closed — останні 20 закритих\n"
+                    "📋 /positions — всі відкриті позиції детально\n"
                     "📜 /history — останні 20 закритих угод\n"
-                    "📊 /report — повна виписка по угодам\n"
-                    "💾 /backup — файл БД\n"
-                    "━━━━━━━━━━━━━━\n"
+                    "📊 /report — виписка по всіх угодах\n"
                     "⏸ /pause — зупинити торгівлю\n"
                     "▶️ /resume — продовжити\n"
                     "🔄 /mode_swap — demo/live\n"
                     "🚨 /panic_close — закрити всі угоди\n"
+                    "📋 /positions — відкриті позиції детально\n"
+                    "📁 /closed — останні 20 закритих\n"
+                    "📊 /report — повна виписка по угодам\n"
+                    "💾 /backup — файл БД\n"
                 )
 
             # ── /status ───────────────────────────────────────────
@@ -705,7 +706,31 @@ class TelegramNotifier:
                                 f"  🕐 Відкрито: <code>{ts}</code>\n"
                                 f"  💬 <i>{reason}</i>\n"
                             )
-                        self.send(msg)
+                        # Telegram max = 4096 символів → шлемо по 5 позицій
+                        chunk_size = 5
+                        chunks = [opens[i:i+chunk_size] for i in range(0, len(opens), chunk_size)]
+                        for ci, chunk in enumerate(chunks):
+                            chunk_msg = f"📊 <b>Позиції {ci*chunk_size+1}-{ci*chunk_size+len(chunk)} з {len(opens)}:</b>\n━━━━━━━━━━━━━━\n"
+                            for t in chunk:
+                                entry  = float(t.get('entry_price', 0))
+                                amount = float(t.get('amount_usd', 0))
+                                sl     = float(t.get('sl_price') or 0)
+                                tp     = float(t.get('tp_price') or 0)
+                                side   = t.get('side','')
+                                pair   = t.get('pair','')
+                                ts     = (t.get('ts_open','')[:16] or '—')
+                                conf   = float(t.get('confidence') or 0)
+                                reason = (t.get('reason') or '')[:50]
+                                tf2    = t.get('timeframe','1h')
+                                e2     = '🟢' if side == 'BUY' else '🔴'
+                                chunk_msg += (
+                                    f"\n{e2} <b>{side} {pair}</b> [{tf2}]\n"
+                                    f"  💵 ${entry:,.2f} | 💰 ${amount:.0f}\n"
+                                    f"  🛑 ${sl:,.2f}  ✅ ${tp:,.2f}\n"
+                                    f"  🎯 {conf:.0%} | 🕐 {ts}\n"
+                                    f"  <i>{reason}</i>\n"
+                                )
+                            self.send(chunk_msg)
                 except Exception as e:
                     self.send(f"❌ /positions: {e}")
 
@@ -778,7 +803,6 @@ class TelegramNotifier:
             elif cmd == "/report":
                 try:
                     stats   = db.get_stats()
-                    initial = float(cfg.initial_demo_balance or 1000)
                     all_t   = db.get_trades(limit=1000)
                     closed  = [t for t in all_t if t.get('status','') not in ('','OPEN')]
                     opens   = db.get_open_trades()
@@ -788,9 +812,6 @@ class TelegramNotifier:
                     losses  = [t for t in closed if float(t.get('net_pnl') or 0) <= 0]
                     avg_w   = (sum(float(t.get('net_pnl',0)) for t in wins) / len(wins)) if wins else 0
                     avg_l   = (sum(float(t.get('net_pnl',0)) for t in losses) / len(losses)) if losses else 0
-                    open_frozen = sum(float(t.get('amount_usd',0)) for t in opens)
-                    open_fees   = sum(float(t.get('fee_usd',0)) for t in opens)
-                    balance     = initial + stats.get('net_pnl', 0) - open_frozen - open_fees
                     # По парах
                     pairs_stats = {}
                     for t in closed:
@@ -806,36 +827,35 @@ class TelegramNotifier:
                     for t in closed:
                         tf3 = t.get('timeframe','1h')
                         if tf3 not in tf_stats:
-                            tf_stats[tf3] = {'n':0,'pnl':0.0,'wins':0}
-                        tf_stats[tf3]['n']    += 1
-                        tf_stats[tf3]['pnl']  += float(t.get('net_pnl') or 0)
-                        if float(t.get('net_pnl') or 0) > 0:
-                            tf_stats[tf3]['wins'] += 1
+                            tf_stats[tf3] = {'n':0,'pnl':0.0}
+                        tf_stats[tf3]['n']   += 1
+                        tf_stats[tf3]['pnl'] += float(t.get('net_pnl') or 0)
 
-                    mode_label = cfg.mode.upper() if hasattr(cfg, 'mode') else 'DEMO'
+                    ini_bal  = float(cfg.initial_demo_balance or 1000)
+                    net_pnl  = float(stats.get('net_pnl', 0))
+                    frozen   = sum(float(t.get('amount_usd',0)) + float(t.get('fee_usd',0)) for t in opens)
+                    real_bal = ini_bal + net_pnl - frozen
                     msg = (
-                        f"📊 <b>ВИПИСКА NeuralTrade {mode_label}</b>\n"
+                        f"📊 <b>ВИПИСКА NeuralTrade DEMO</b>\n"
                         f"━━━━━━━━━━━━━━━━━━━━\n"
-                        f"💰 Баланс: <code>${balance:.2f}</code>\n"
-                        f"💵 Початковий: <code>${initial:.2f}</code>\n"
+                        f"💰 Баланс: <code>${real_bal:.2f}</code>\n"
                         f"📈 Всього угод: {len(closed)} закрито | {len(opens)} відкрито\n"
                         f"🎯 WR: {stats.get('winrate',0):.1f}%\n"
                         f"━━━━━━━━━━━━━━\n"
                         f"P&L Gross: <code>${total_g:+.2f}</code>\n"
                         f"Комісії:   <code>-${total_f:.4f}</code>\n"
-                        f"Net P&L:   <code>${total_g - total_f:+.2f}</code>\n"
+                        f"Net P&L:   <code>${total_g-total_f:+.2f}</code>\n"
                         f"Сер. профіт: <code>${avg_w:+.2f}</code>\n"
                         f"Сер. збиток: <code>${avg_l:+.2f}</code>\n"
                         f"━━━━━━━━━━━━━━\n"
                         f"<b>По парах:</b>\n"
                     )
                     for p, s in sorted(pairs_stats.items(), key=lambda x: -x[1]['pnl']):
-                        wr2 = s['w'] / s['n'] * 100 if s['n'] else 0
+                        wr2 = s['w']/s['n']*100 if s['n'] else 0
                         msg += f"  {p}: {s['n']} угод | P&L ${s['pnl']:+.2f} | WR {wr2:.0f}%\n"
                     msg += "━━━━━━━━━━━━━━\n<b>По таймфреймах:</b>\n"
                     for tf3, s in sorted(tf_stats.items()):
-                        wr3 = s['wins'] / s['n'] * 100 if s['n'] else 0
-                        msg += f"  [{tf3}]: {s['n']} угод | WR {wr3:.0f}% | P&L ${s['pnl']:+.2f}\n"
+                        msg += f"  [{tf3}]: {s['n']} угод | P&L ${s['pnl']:+.2f}\n"
                     self.send(msg)
                 except Exception as e:
                     self.send(f"❌ /report: {e}")
@@ -843,6 +863,51 @@ class TelegramNotifier:
             # ── /backup ───────────────────────────────────────────
             elif cmd == "/backup":
                 self.send_file(db.path, f"💾 Бекап БД: {db.path}")
+
+            # ── /report — виписка по угодам ───────────────────────
+            elif cmd == "/report":
+                try:
+                    stat  = db.get_stats()
+                    opens = db.get_open_trades()
+                    rows  = db.conn.execute(
+                        "SELECT * FROM trades WHERE status NOT IN ('OPEN') ORDER BY id"
+                    ).fetchall()
+                    closed = [dict(r) for r in rows]
+                    # Підрахунок по таймфреймах
+                    tf_stats = {}
+                    for t in closed:
+                        tf  = t.get('timeframe','1h')
+                        net = float(t.get('net_pnl') or 0)
+                        if tf not in tf_stats:
+                            tf_stats[tf] = {'count':0,'wins':0,'net':0}
+                        tf_stats[tf]['count'] += 1
+                        tf_stats[tf]['net']   += net
+                        if net > 0: tf_stats[tf]['wins'] += 1
+                    # Підрахунок по парах
+                    pair_stats = {}
+                    for t in closed:
+                        pair = t.get('pair','?')
+                        net  = float(t.get('net_pnl') or 0)
+                        if pair not in pair_stats:
+                            pair_stats[pair] = {'count':0,'net':0}
+                        pair_stats[pair]['count'] += 1
+                        pair_stats[pair]['net']   += net
+                    msg  = f"📊 <b>Виписка NeuralTrade</b>\n━━━━━━━━━━━━━━\n"
+                    msg += f"💰 Угод закрито: {stat.get('total',0)}\n"
+                    msg += f"🏆 WR: {stat.get('winrate',0)}% | Net P&L: <code>${stat.get('net_pnl',0):+.2f}</code>\n"
+                    msg += f"📋 Відкрито зараз: {len(opens)}\n\n"
+                    if tf_stats:
+                        msg += "<b>По таймфреймах:</b>\n"
+                        for tf, s in sorted(tf_stats.items()):
+                            wr = round(s['wins']/s['count']*100) if s['count'] else 0
+                            msg += f"  [{tf}] {s['count']} угод | WR:{wr}% | P&L:<code>${s['net']:+.2f}</code>\n"
+                    if pair_stats:
+                        msg += "\n<b>По парах:</b>\n"
+                        for pair, s in sorted(pair_stats.items(), key=lambda x:-abs(x[1]['net'])):
+                            msg += f"  {pair}: {s['count']} угод | <code>${s['net']:+.2f}</code>\n"
+                    self.send(msg)
+                except Exception as e:
+                    self.send(f"❌ /report: {e}")
 
             else:
                 self.send(f"❓ Невідома команда: {cmd}\n/help — список команд")
