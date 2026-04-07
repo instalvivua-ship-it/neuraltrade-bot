@@ -1064,13 +1064,46 @@ class ExecutorAgent:
         self.db   = db
         self.tg   = tg
         self.risk = risk
-        self._demo_balance = float(cfg.initial_demo_balance or 1000.0)
         self._exchange = None
-        # Trailing stop стан: trade_id → highest/lowest price
         self._trailing: Dict[int, Dict] = {}
+
+        # Відновлюємо баланс з БД при старті
+        self._demo_balance = self._restore_balance(cfg, db)
+        log.info(f"💰 Demo баланс відновлено: ${self._demo_balance:.2f}")
 
         if not cfg.is_demo:
             self._init_exchange()
+
+    def _restore_balance(self, cfg, db) -> float:
+        """Відновлює баланс з БД або повертає початковий."""
+        initial = float(cfg.initial_demo_balance or 1000.0)
+        try:
+            # Беремо останній записаний баланс
+            row = db.conn.execute(
+                "SELECT balance FROM balance_history ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            if row and row[0] and float(row[0]) > 0:
+                log.info(f"💾 Баланс з БД: ${float(row[0]):.2f}")
+                return float(row[0])
+        except Exception:
+            pass
+        # Рахуємо з угод якщо немає збереженого балансу
+        try:
+            # initial - заморожені відкриті - комісії закритих + прибуток закритих
+            open_trades = db.get_open_trades()
+            stats = db.get_stats()
+            frozen = sum(float(t.get("amount_usd", 0)) for t in open_trades)
+            net_pnl = float(stats.get("net_pnl", 0))
+            fees = float(stats.get("fees", 0))
+            # Баланс = початковий - заморожено + чистий PnL
+            bal = initial - frozen + net_pnl
+            if bal > 0:
+                log.info(f"📊 Баланс розраховано: ${bal:.2f} "
+                         f"(frozen=${frozen:.2f} pnl=${net_pnl:.2f})")
+                return bal
+        except Exception as e:
+            log.debug(f"Balance calc: {e}")
+        return initial
 
     def _init_exchange(self):
         if not HAS_CCXT:

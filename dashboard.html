@@ -774,35 +774,35 @@ function connectWS() {
 function handleServerMsg(msg) {
   switch(msg.type) {
     case 'init':
-      // Встановлюємо початковий баланс якщо ще не встановлено
       if (msg.balance && msg.balance > 0) {
         var savedS2 = JSON.parse(localStorage.getItem('nt_stats') || 'null');
         if (!savedS2 || !savedS2.sBal) {
-          sBal = msg.balance; // Перший запуск — зберігаємо стартовий баланс
+          sBal = msg.balance;
         }
       }
       updateStats(msg);
-      if (msg.trades)  renderTrades(msg.trades);
-      if (msg.mode)    updateModeUI(msg.mode);
+      // Завжди рендеримо всі угоди при підключенні
+      if (msg.trades && msg.trades.length > 0) {
+        trades = msg.trades;
+        renderTrades(msg.trades);
+        renderMobileTrades(msg.trades);
+        addLog('ok', '📋 Завантажено ' + msg.trades.length + ' угод з сервера');
+      }
+      if (msg.mode) updateModeUI(msg.mode);
       if (msg.config && msg.config.min_trades_for_train) {
         mlTarget = msg.config.min_trades_for_train;
       }
-      // Відновити ML статистику з сервера
       if (msg.ml_stats) {
         mlTradesN  = msg.ml_stats.n_samples || 0;
         mlAccuracy = msg.ml_stats.accuracy  || null;
         updateMLStats();
       }
-      // Відновити індикатори якщо є кешовані
       if (msg.last_tech && msg.last_tech[curPair]) {
         var lt = msg.last_tech[curPair];
-        updateIndicator('rsi',  lt.rsi ? lt.rsi.toFixed(1) : '—', sigClass(lt.rsi||50, 35, 65));
-        updateIndicator('macd', lt.macd !== undefined ? (lt.macd>0?'+':'')+lt.macd.toFixed(0) : '—', (lt.macd||0)>0?'bull':'bear');
-        updateIndicator('fg',   lt.fear_greed ? lt.fear_greed.toFixed(0) : '—', fgClass(lt.fear_greed||50));
-        updateIndicator('fund', lt.funding !== undefined ? (lt.funding*100).toFixed(4)+'%' : '—', 'neut');
+        if (lt.rsi !== undefined) updateIndicator('rsi', parseFloat(lt.rsi).toFixed(1), sigClass(lt.rsi||50, 35, 65));
+        if (lt.macd !== undefined) updateIndicator('macd', (lt.macd>0?'+':'')+parseFloat(lt.macd).toFixed(0), (lt.macd||0)>0?'bull':'bear');
       }
       break;
-
     case 'prices':
       for (const [pair, price] of Object.entries(msg.prices)) {
         if (PRICES[pair]) PRICES[pair].p = price;
@@ -1984,6 +1984,23 @@ function updateStats(data) {
   if (Array.isArray(data.open_trades))        openCount = data.open_trades.length;
   else if (data.open_count !== undefined)     openCount = parseInt(data.open_count) || 0;
   if (g('bOpen')) g('bOpen').textContent = openCount;
+
+  // ── Підрахунок замороженої суми (відкриті угоди) ─────────────
+  var frozenAmt = 0;
+  if (Array.isArray(data.open_trades)) {
+    frozenAmt = data.open_trades.reduce(function(s,t){ return s+parseFloat(t.amount_usd||0); }, 0);
+  }
+  // Показуємо в балансі: $1000 (заморожено: $150)
+  var balEl2 = document.getElementById('balVal');
+  if (balEl2) {
+    balEl2.textContent = fmt(bal);
+  }
+  var chgEl2 = document.getElementById('balChg');
+  if (chgEl2 && frozenAmt > 0) {
+    var baseChgStr = (chg>=0?'+':'')+'$'+fmt(chg)+' ('+(chg>=0?'+':'')+pct+'%)';
+    chgEl2.textContent = baseChgStr + ' | заморожено: $'+fmt(frozenAmt,0);
+    chgEl2.className = 'bc' + (chg < 0 ? ' neg' : '');
+  }
 
   // ── Оновити баланс глобально ──────────────────────────────────
   if (bal > 0) balance = bal;
