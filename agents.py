@@ -1251,13 +1251,18 @@ class ExecutorAgent:
         for t in open_trades:
             current = self._get_price(t["pair"])
             if not current:
+                log.warning(f"check_open_trades: немає ціни для {t['pair']}")
                 continue
 
             trade_id = t["id"]
             entry    = t["entry_price"]
             side     = t["side"]
-            sl       = t["sl_price"]
-            tp       = t["tp_price"]
+            sl       = t.get("sl_price") or 0
+            tp       = t.get("tp_price") or 0
+
+            log.debug(f"#{trade_id} {side} {t['pair']}: "
+                     f"entry=${entry:,.2f} current=${current:,.2f} "
+                     f"SL=${sl:,.2f} TP=${tp:,.2f}")
 
             # ── Trailing Stop ──────────────────────────────────
             if self.cfg.trailing_stop_enabled and trade_id in self._trailing:
@@ -1355,12 +1360,48 @@ class ExecutorAgent:
                  f"{t['pair']} @ ${exit_price:,.2f} | net={net:+.2f}")
 
     def _get_price(self, pair: str) -> Optional[float]:
+        """Отримує реальну ціну через Bybit (як TechAnalyst)."""
+        # Live режим — через ccxt
         if not self.cfg.is_demo and self._exchange:
             for attempt in range(2):
                 try:
                     return float(self._exchange.fetch_ticker(pair)["last"])
                 except Exception:
                     time.sleep(1)
-        import random
-        base = {"BTC/USDT":67000,"ETH/USDT":3200,"SOL/USDT":148,"BNB/USDT":590}.get(pair,100)
-        return base * (1 + random.gauss(0, 0.003))
+
+        # Demo режим — через Bybit REST (реальна ціна!)
+        try:
+            sym = pair.replace("/", "")
+            r = requests.get(
+                f"https://api.bybit.com/v5/market/tickers"
+                f"?category=spot&symbol={sym}",
+                timeout=5
+            )
+            if r.status_code == 200:
+                items = r.json().get("result", {}).get("list", [])
+                if items:
+                    return float(items[0]["lastPrice"])
+        except Exception:
+            pass
+
+        # CoinGecko fallback
+        try:
+            sym_map = {
+                "BTC/USDT": "bitcoin", "ETH/USDT": "ethereum",
+                "SOL/USDT": "solana",  "BNB/USDT": "binancecoin",
+            }
+            cg_id = sym_map.get(pair)
+            if cg_id:
+                r = requests.get(
+                    f"https://api.coingecko.com/api/v3/simple/price"
+                    f"?ids={cg_id}&vs_currencies=usd",
+                    timeout=8
+                )
+                if r.status_code == 200:
+                    return float(r.json()[cg_id]["usd"])
+        except Exception:
+            pass
+
+        return None  # Не повертаємо симуляцію — краще пропустити цикл
+
+

@@ -786,7 +786,14 @@ function handleServerMsg(msg) {
         trades = msg.trades;
         renderTrades(msg.trades);
         renderMobileTrades(msg.trades);
-        addLog('ok', '📋 Завантажено ' + msg.trades.length + ' угод з сервера');
+        // Badge
+        var openT4 = msg.trades.filter(function(t){ return !t.status || t.status === 'OPEN'; });
+        var badge4 = document.getElementById('openBadge');
+        if (badge4) {
+          if (openT4.length > 0) { badge4.textContent = openT4.length; badge4.style.display = 'inline'; }
+          else { badge4.style.display = 'none'; }
+        }
+        addLog('ok', '📋 ' + msg.trades.length + ' угод (' + openT4.length + ' відкрито)');
       }
       if (msg.mode) updateModeUI(msg.mode);
       if (msg.config && msg.config.min_trades_for_train) {
@@ -886,15 +893,13 @@ function handleServerMsg(msg) {
 
     case 'stats_update':
       updateStats(msg);
-      // Оновити всі угоди
       if (msg.open_trades && msg.open_trades.length > 0) {
+        // Оновлюємо глобальний масив угод
+        trades = msg.open_trades;
         renderTrades(msg.open_trades, false);
         renderMobileTrades(msg.open_trades);
-      } else if (msg.open_count === 0) {
-        // Немає угод - показати повідомлення
-        renderTrades([]);
-        renderMobileTrades([]);
       } else {
+        // Завантажуємо повний список (відкриті + закриті)
         fetchTrades();
       }
       // Оновити ML stats якщо є
@@ -1010,9 +1015,17 @@ async function loadAllFromServer() {
         if (mkrs.length > 20) mkrs = mkrs.slice(-20);
         draw();
         addLog('ok', '📋 Завантажено ' + allTrades.length + ' угод');
-        // Рендеримо в обидва місця: десктоп таблиця + мобільні картки
+        // Рендеримо всі угоди
         renderTrades(allTrades);
-        renderMobileTrades(allTrades);
+        // Для мобільного — показуємо відкриті окремо якщо є, інакше всі
+        var openOnes = allTrades.filter(function(t){ return !t.status || t.status === 'OPEN'; });
+        renderMobileTrades(openOnes.length > 0 ? openOnes : allTrades);
+        // Оновити badge
+        var badge = document.getElementById('openBadge');
+        if (badge) {
+          if (openOnes.length > 0) { badge.textContent = openOnes.length; badge.style.display = 'inline'; }
+          else { badge.style.display = 'none'; }
+        }
         // Зберігаємо в localStorage
         try { localStorage.setItem('nt_trades_cache', JSON.stringify(allTrades.slice(0, 500))); } catch(e) {}
         // Одразу перераховуємо stats з реальних даних
@@ -2497,7 +2510,20 @@ addLog('warn','Для старту: pip install -r requirements.txt && python se
     }
   } catch(e) {}
 
-  if (savedUrl && savedKey) setTimeout(connectWS, 1000);
+  if (savedUrl && savedKey) {
+    setTimeout(connectWS, 1000);
+    // Якщо є кеш угод — показати одразу
+    try {
+      var cached = JSON.parse(localStorage.getItem('nt_trades_cache') || 'null');
+      if (cached && cached.length > 0) {
+        trades = cached;
+        renderTrades(cached);
+        var openC = cached.filter(function(t){ return !t.status || t.status === 'OPEN'; });
+        renderMobileTrades(openC.length > 0 ? openC : cached);
+        addLog('ok', '💾 ' + cached.length + ' угод з кешу');
+      }
+    } catch(e) {}
+  }
 
 // ── Keep-alive: пінгує сервер кожні 3 хв ──────────────────────
 setInterval(function() {
