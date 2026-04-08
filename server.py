@@ -42,7 +42,7 @@ risk     = RiskManagerAgent(cfg)
 tech     = TechAnalystAgent(cfg)
 sentiment= SentimentAgent(cfg)
 debate   = DebateAI()
-executor = ExecutorAgent(cfg, db, tg, risk)
+executor = ExecutorAgent(cfg, db, tg, risk, tech_agent=tech)
 tg.set_bot(type('Bot', (), {'executor': executor})())
 
 _ws_clients: Set[WebSocket] = set()

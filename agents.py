@@ -1101,11 +1101,12 @@ class ExecutorAgent:
       ✅ Partial fill detection
     """
 
-    def __init__(self, cfg, db, tg, risk: RiskManagerAgent):
+    def __init__(self, cfg, db, tg, risk: RiskManagerAgent, tech_agent=None):
         self.cfg  = cfg
         self.db   = db
         self.tg   = tg
         self.risk = risk
+        self.tech = tech_agent  # посилання на TechAnalystAgent для кешу цін
         self._exchange = None
         self._trailing: Dict[int, Dict] = {}
 
@@ -1429,16 +1430,25 @@ class ExecutorAgent:
                  f"{t['pair']} @ ${exit_price:,.2f} | net={net:+.2f} balance=${self._demo_balance:.2f}")
 
     def _get_price(self, pair: str) -> Optional[float]:
-        """Отримує реальну ціну через Bybit (як TechAnalyst)."""
-        # Live режим — через ccxt
+        """Отримує ціну: спочатку з кешу TechAnalyst, потім Bybit, потім CoinGecko."""
+        # 1. Кеш TechAnalyst (свіжий, TTL 30 сек) — без зайвих HTTP запитів
+        if self.tech and pair in self.tech._price_cache:
+            p, ts = self.tech._price_cache[pair]
+            if time.time() - ts < 30:
+                return p
+
+        # 2. Live режим — через ccxt
         if not self.cfg.is_demo and self._exchange:
             for attempt in range(2):
                 try:
-                    return float(self._exchange.fetch_ticker(pair)["last"])
+                    p = float(self._exchange.fetch_ticker(pair)["last"])
+                    if self.tech:
+                        self.tech._price_cache[pair] = (p, time.time())
+                    return p
                 except Exception:
                     time.sleep(1)
 
-        # Demo режим — через Bybit REST (реальна ціна!)
+        # 3. Bybit REST (публічний, без авторизації)
         try:
             sym = pair.replace("/", "")
             r = requests.get(
@@ -1449,15 +1459,24 @@ class ExecutorAgent:
             if r.status_code == 200:
                 items = r.json().get("result", {}).get("list", [])
                 if items:
-                    return float(items[0]["lastPrice"])
+                    p = float(items[0]["lastPrice"])
+                    if self.tech:
+                        self.tech._price_cache[pair] = (p, time.time())
+                    return p
         except Exception:
             pass
 
-        # CoinGecko fallback
+        # 4. CoinGecko fallback (повна map всіх пар)
         try:
             sym_map = {
-                "BTC/USDT": "bitcoin", "ETH/USDT": "ethereum",
-                "SOL/USDT": "solana",  "BNB/USDT": "binancecoin",
+                "BTC/USDT":  "bitcoin",        "ETH/USDT":  "ethereum",
+                "SOL/USDT":  "solana",         "BNB/USDT":  "binancecoin",
+                "XRP/USDT":  "ripple",         "ADA/USDT":  "cardano",
+                "AVAX/USDT": "avalanche-2",    "DOT/USDT":  "polkadot",
+                "LINK/USDT": "chainlink",      "MATIC/USDT":"matic-network",
+                "DOGE/USDT": "dogecoin",       "UNI/USDT":  "uniswap",
+                "ATOM/USDT": "cosmos",         "LTC/USDT":  "litecoin",
+                "TRX/USDT":  "tron",
             }
             cg_id = sym_map.get(pair)
             if cg_id:
@@ -1467,10 +1486,13 @@ class ExecutorAgent:
                     timeout=8
                 )
                 if r.status_code == 200:
-                    return float(r.json()[cg_id]["usd"])
+                    p = float(r.json()[cg_id]["usd"])
+                    if self.tech:
+                        self.tech._price_cache[pair] = (p, time.time())
+                    return p
         except Exception:
             pass
 
-        return None  # Не повертаємо симуляцію — краще пропустити цикл
+        return None
 
 

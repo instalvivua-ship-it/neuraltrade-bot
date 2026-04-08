@@ -21,7 +21,7 @@
     "1h"
   ],
   "timeframe": "1h",
-  "max_trades_per_tf": 10,
+  "max_trades_per_tf": 30,
   "max_open_trades": 30,
   "cycle_interval_minutes": 2,
   "min_confidence": 0.55,
