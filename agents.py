@@ -830,9 +830,13 @@ class DebateAI:
         adx = tech.get("adx", 20)
         if adx > 30: tech_raw *= 1.2
 
-        # Sideways зменшує впевненість
+        # Sideways зменшує впевненість, але не блокує екстремальні RSI
         if regime == "sideways":
-            tech_raw *= 0.5
+            rsi_val = tech.get("rsi", 50)
+            if rsi_val < 28 or rsi_val > 72:
+                tech_raw *= 0.8   # екстремальний oversold/overbought — менше пригнічення
+            else:
+                tech_raw *= 0.6   # було 0.5 — трохи м'якше
 
         tech_raw = max(-1.0, min(1.0, tech_raw))
 
@@ -975,7 +979,7 @@ class RiskManagerAgent:
 
         # ── Вже є угода по цій парі ─────────────────────────────
         # ── Per-TF ліміт ─────────────────────────────────────────
-        cur_tf  = tech_s.get("timeframe", self.cfg.timeframe or "1h")
+        cur_tf  = (tech_signal.get("timeframe") if tech_signal else None) or self.cfg.timeframe or "1h"
         max_ptf = self.cfg._data.get("max_trades_per_tf", 10)
         same_tf = [t for t in open_trades if t.get("timeframe") == cur_tf]
         if len(same_tf) >= max_ptf:
