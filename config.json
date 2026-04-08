@@ -20,7 +20,7 @@
     "15m",
     "1h"
   ],
-  "timeframe": "1h",
+  "timeframe": "15m",
   "max_trades_per_tf": 10,
   "max_open_trades": 30,
   "cycle_interval_minutes": 3,
@@ -32,7 +32,7 @@
   "risk_per_trade_pct": 0.01,
   "atr_sl_multiplier": 2.0,
   "atr_tp_multiplier": 4.0,
-  "volatility_pause_multiplier": 2.5,
+  "volatility_pause_multiplier": 3.5,
   "fee_rate": 0.001,
   "use_bnb": false,
   "initial_demo_balance": 1000.0,
