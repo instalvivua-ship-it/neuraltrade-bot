@@ -726,55 +726,40 @@ class TelegramNotifier:
                     if not opens:
                         self.send("📭 Відкритих позицій немає\n/resume щоб відновити торгівлю")
                     else:
-                        msg = f"📊 <b>Відкриті позиції: {len(opens)}</b>\n━━━━━━━━━━━━━━\n"
+                        # Будуємо блоки для кожної позиції
+                        header = f"📊 <b>Відкриті позиції: {len(opens)}</b>\n━━━━━━━━━━━━━━"
+                        blocks = []
                         for t in opens:
                             entry  = float(t.get('entry_price', 0))
                             amount = float(t.get('amount_usd', 0))
                             sl     = float(t.get('sl_price') or 0)
                             tp     = float(t.get('tp_price') or 0)
-                            fee    = float(t.get('fee_usd') or 0)
-                            side   = t.get('side','')
-                            pair   = t.get('pair','')
-                            ts     = (t.get('ts_open','')[:16] or '—')
+                            side   = t.get('side', '')
+                            pair   = t.get('pair', '')
+                            ts     = (t.get('ts_open', '')[:16] or '—')
                             conf   = float(t.get('confidence') or 0)
                             reason = (t.get('reason') or '')[:60]
-                            e2     = '🟢' if side == 'BUY' else '🔴'
                             tf2    = t.get('timeframe', '1h')
                             regime = t.get('regime', '—')
-                            msg += (
+                            e2     = '🟢' if side == 'BUY' else '🔴'
+                            blocks.append(
                                 f"\n{e2} <b>{side} {pair}</b> [{tf2}]\n"
                                 f"  💵 Вхід: <code>${entry:,.2f}</code>\n"
                                 f"  💰 Сума: <code>${amount:.2f}</code>\n"
                                 f"  🛑 SL: <code>${sl:,.2f}</code>  ✅ TP: <code>${tp:,.2f}</code>\n"
                                 f"  🎯 Conf: <code>{conf:.0%}</code> | Режим: <code>{regime}</code>\n"
                                 f"  🕐 Відкрито: <code>{ts}</code>\n"
-                                f"  💬 <i>{reason}</i>\n"
+                                f"  💬 <i>{reason}</i>"
                             )
-                        # Telegram max = 4096 символів → шлемо по 5 позицій
-                        chunk_size = 5
-                        chunks = [opens[i:i+chunk_size] for i in range(0, len(opens), chunk_size)]
-                        for ci, chunk in enumerate(chunks):
-                            chunk_msg = f"📊 <b>Позиції {ci*chunk_size+1}-{ci*chunk_size+len(chunk)} з {len(opens)}:</b>\n━━━━━━━━━━━━━━\n"
-                            for t in chunk:
-                                entry  = float(t.get('entry_price', 0))
-                                amount = float(t.get('amount_usd', 0))
-                                sl     = float(t.get('sl_price') or 0)
-                                tp     = float(t.get('tp_price') or 0)
-                                side   = t.get('side','')
-                                pair   = t.get('pair','')
-                                ts     = (t.get('ts_open','')[:16] or '—')
-                                conf   = float(t.get('confidence') or 0)
-                                reason = (t.get('reason') or '')[:50]
-                                tf2    = t.get('timeframe','1h')
-                                e2     = '🟢' if side == 'BUY' else '🔴'
-                                chunk_msg += (
-                                    f"\n{e2} <b>{side} {pair}</b> [{tf2}]\n"
-                                    f"  💵 ${entry:,.2f} | 💰 ${amount:.0f}\n"
-                                    f"  🛑 ${sl:,.2f}  ✅ ${tp:,.2f}\n"
-                                    f"  🎯 {conf:.0%} | 🕐 {ts}\n"
-                                    f"  <i>{reason}</i>\n"
-                                )
-                            self.send(chunk_msg)
+                        # Розбиваємо на повідомлення ≤ 4000 символів
+                        MAX = 3800
+                        msg = header
+                        for block in blocks:
+                            if len(msg) + len(block) + 1 > MAX:
+                                self.send(msg)
+                                msg = f"📊 <b>Продовження ({len(opens)} позицій):</b>\n━━━━━━━━━━━━━━"
+                            msg += block
+                        self.send(msg)
                 except Exception as e:
                     self.send(f"❌ /positions: {e}")
 
