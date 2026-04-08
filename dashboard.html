@@ -1095,7 +1095,7 @@ function restoreFromCache() {
 
 async function fetchTrades() {
   try {
-    const apiUrl = g('serverUrl').value.replace('ws://', 'http://').replace('/ws', '');
+    const apiUrl = g('serverUrl').value.replace('wss://','https://').replace('ws://','http://').replace('/ws','');
     const apiKey2 = localStorage.getItem('neuraltrade_api_key') || localStorage.getItem('nt_api_key') || '';
     const r = await fetch(`${apiUrl}/api/trades?limit=20`, {headers:{'X-API-Key':apiKey2}});
     const data = await r.json();
@@ -2234,7 +2234,7 @@ async function exportCSV() {
 }
 
 async function sendToServer(path, body) {
-  const url = g('serverUrl').value.replace('ws://','http://').replace('/ws','');
+  const url = g('serverUrl').value.replace('wss://','https://').replace('ws://','http://').replace('/ws','');
   try {
     const apiKey = localStorage.getItem('neuraltrade_api_key') || localStorage.getItem('nt_api_key') || '';
     const r = await fetch(url+path, {

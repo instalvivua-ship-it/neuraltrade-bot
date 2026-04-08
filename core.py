@@ -864,51 +864,6 @@ class TelegramNotifier:
             elif cmd == "/backup":
                 self.send_file(db.path, f"💾 Бекап БД: {db.path}")
 
-            # ── /report — виписка по угодам ───────────────────────
-            elif cmd == "/report":
-                try:
-                    stat  = db.get_stats()
-                    opens = db.get_open_trades()
-                    rows  = db.conn.execute(
-                        "SELECT * FROM trades WHERE status NOT IN ('OPEN') ORDER BY id"
-                    ).fetchall()
-                    closed = [dict(r) for r in rows]
-                    # Підрахунок по таймфреймах
-                    tf_stats = {}
-                    for t in closed:
-                        tf  = t.get('timeframe','1h')
-                        net = float(t.get('net_pnl') or 0)
-                        if tf not in tf_stats:
-                            tf_stats[tf] = {'count':0,'wins':0,'net':0}
-                        tf_stats[tf]['count'] += 1
-                        tf_stats[tf]['net']   += net
-                        if net > 0: tf_stats[tf]['wins'] += 1
-                    # Підрахунок по парах
-                    pair_stats = {}
-                    for t in closed:
-                        pair = t.get('pair','?')
-                        net  = float(t.get('net_pnl') or 0)
-                        if pair not in pair_stats:
-                            pair_stats[pair] = {'count':0,'net':0}
-                        pair_stats[pair]['count'] += 1
-                        pair_stats[pair]['net']   += net
-                    msg  = f"📊 <b>Виписка NeuralTrade</b>\n━━━━━━━━━━━━━━\n"
-                    msg += f"💰 Угод закрито: {stat.get('total',0)}\n"
-                    msg += f"🏆 WR: {stat.get('winrate',0)}% | Net P&L: <code>${stat.get('net_pnl',0):+.2f}</code>\n"
-                    msg += f"📋 Відкрито зараз: {len(opens)}\n\n"
-                    if tf_stats:
-                        msg += "<b>По таймфреймах:</b>\n"
-                        for tf, s in sorted(tf_stats.items()):
-                            wr = round(s['wins']/s['count']*100) if s['count'] else 0
-                            msg += f"  [{tf}] {s['count']} угод | WR:{wr}% | P&L:<code>${s['net']:+.2f}</code>\n"
-                    if pair_stats:
-                        msg += "\n<b>По парах:</b>\n"
-                        for pair, s in sorted(pair_stats.items(), key=lambda x:-abs(x[1]['net'])):
-                            msg += f"  {pair}: {s['count']} угод | <code>${s['net']:+.2f}</code>\n"
-                    self.send(msg)
-                except Exception as e:
-                    self.send(f"❌ /report: {e}")
-
             else:
                 self.send(f"❓ Невідома команда: {cmd}\n/help — список команд")
 
