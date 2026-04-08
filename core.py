@@ -157,6 +157,7 @@ class Database:
         self.conn  = sqlite3.connect(path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self._init()
+        self._migrate()
         log.info(f"📦 БД: {path}")
 
     def _init(self):
@@ -226,6 +227,49 @@ class Database:
             );
             """)
             self.conn.commit()
+
+    def _migrate(self):
+        """Міграція БД — додає нові колонки якщо відсутні (safe, ігнорує помилки)."""
+        migrations = [
+            "ALTER TABLE trades ADD COLUMN timeframe        TEXT    DEFAULT '1h'",
+            "ALTER TABLE trades ADD COLUMN regime           TEXT",
+            "ALTER TABLE trades ADD COLUMN confidence       REAL",
+            "ALTER TABLE trades ADD COLUMN reason           TEXT",
+            "ALTER TABLE trades ADD COLUMN rsi              REAL",
+            "ALTER TABLE trades ADD COLUMN macd             REAL",
+            "ALTER TABLE trades ADD COLUMN ma20             REAL",
+            "ALTER TABLE trades ADD COLUMN ma50             REAL",
+            "ALTER TABLE trades ADD COLUMN bb_pct           REAL",
+            "ALTER TABLE trades ADD COLUMN atr              REAL",
+            "ALTER TABLE trades ADD COLUMN volume_ratio     REAL",
+            "ALTER TABLE trades ADD COLUMN vol_std          REAL",
+            "ALTER TABLE trades ADD COLUMN ma_dist          REAL",
+            "ALTER TABLE trades ADD COLUMN ma50_dist        REAL",
+            "ALTER TABLE trades ADD COLUMN ret1             REAL",
+            "ALTER TABLE trades ADD COLUMN ret3             REAL",
+            "ALTER TABLE trades ADD COLUMN ret5             REAL",
+            "ALTER TABLE trades ADD COLUMN fear_greed       REAL",
+            "ALTER TABLE trades ADD COLUMN funding_rate     REAL",
+            "ALTER TABLE trades ADD COLUMN sent_score       REAL",
+            "ALTER TABLE trades ADD COLUMN ml_prob          REAL",
+            "ALTER TABLE trades ADD COLUMN hour_of_day      INTEGER",
+            "ALTER TABLE trades ADD COLUMN binance_order_id TEXT",
+            "ALTER TABLE trades ADD COLUMN outcome          INTEGER",
+            "ALTER TABLE trades ADD COLUMN obi              REAL",
+            "ALTER TABLE trades ADD COLUMN cvd              REAL",
+            "ALTER TABLE signals ADD COLUMN bull_votes      INTEGER DEFAULT 0",
+            "ALTER TABLE signals ADD COLUMN bear_votes      INTEGER DEFAULT 0",
+            "ALTER TABLE signals ADD COLUMN regime          TEXT",
+            "ALTER TABLE signals ADD COLUMN mode            TEXT DEFAULT 'demo'",
+        ]
+        with self._lock:
+            for sql in migrations:
+                try:
+                    self.conn.execute(sql)
+                except Exception:
+                    pass  # Колонка вже існує — ігноруємо
+            self.conn.commit()
+        log.info("🔧 БД міграція виконана")
 
     # ── TRADES ──────────────────────────────────────────────────
     def open_trade(self, t: dict) -> int:
